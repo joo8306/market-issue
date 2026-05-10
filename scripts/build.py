@@ -37,20 +37,45 @@ FEEDS = {
 }
 
 # ===== HOT 키워드 =====
-HOT_KEYWORDS_KR = [
+HOT_KEYWORDS_KR =  [
+    # 매크로
     "한국은행", "기준금리", "금통위", "CPI", "물가", "환율", "원달러",
+    # 정책·규제
     "공매도", "거래정지", "관리종목", "상장폐지", "공시",
+    # 기업 이벤트
     "감자", "유상증자", "전환사채", "리픽싱", "자사주", "배당",
+    # 시장
     "코스피", "코스닥", "외국인",
+    # 금융당국
     "금감원", "금융위", "거래소", "FSC", "FSS",
+    # === 추가: 미국 영향 (한국어 보도) ===
+    "트럼프", "관세", "美국", "무역분쟁", "무역전쟁",
+    "엔비디아", "테슬라", "애플",
+    # === 추가: 한국 주요 종목·섹터 ===
+    "삼성전자", "SK하이닉스", "반도체", "2차전지", "방산",
 ]
 
 HOT_KEYWORDS_EN = [
+    # 중앙은행
     "Fed", "FOMC", "rate cut", "rate hike", "CPI", "PCE", "Powell", "BOJ", "ECB",
+    # 시장 반응
     "selloff", "rally", "plunge", "surge", "crash", "halt",
+    # 리스크
     "risk-off", "VIX", "DXY", "yields",
+    # 지정학
     "sanctions", "tariff", "ceasefire", "war",
+    # 기업
     "guidance", "earnings beat", "earnings miss", "downgrade", "upgrade",
+    # === 추가: 미국 증시·지수 ===
+    "S&P 500", "Nasdaq", "Dow Jones", "Russell 2000",
+    "Treasury", "10-year yield",
+    # === 추가: 미국 빅테크 ===
+    "Nvidia", "Apple", "Tesla", "Microsoft", "Google", "Amazon", "Meta",
+    "semiconductor", "chip",
+    # === 추가: 트럼프/미국 정치 ===
+    "Trump", "trade war", "China tariff", "Korea tariff",
+    "executive order", "Musk", "DOGE",
+    "shutdown", "debt ceiling", "election",
 ]
 
 LOOKBACK_HOURS = 24
