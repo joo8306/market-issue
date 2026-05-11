@@ -1,8 +1,8 @@
 """
 A안: RSS 기반 HOT 시장 이슈 대시보드
 - User-Agent 헤더로 403 우회
-- 단종 RSS 교체 (Reuters → Yahoo/Investing)
 - 한국 휴장일 자동 감지
+- 한경 프리미엄(유료) 기사 필터링
 - DART 공시 옵션 (DART_API_KEY 환경변수 설정 시)
 """
 
@@ -37,7 +37,7 @@ FEEDS = {
 }
 
 # ===== HOT 키워드 =====
-HOT_KEYWORDS_KR =  [
+HOT_KEYWORDS_KR = [
     # 매크로
     "한국은행", "기준금리", "금통위", "CPI", "물가", "환율", "원달러",
     # 정책·규제
@@ -48,10 +48,10 @@ HOT_KEYWORDS_KR =  [
     "코스피", "코스닥", "외국인",
     # 금융당국
     "금감원", "금융위", "거래소", "FSC", "FSS",
-    # === 추가: 미국 영향 (한국어 보도) ===
+    # 미국 영향
     "트럼프", "관세", "美국", "무역분쟁", "무역전쟁",
     "엔비디아", "테슬라", "애플",
-    # === 추가: 한국 주요 종목·섹터 ===
+    # 한국 주요 종목·섹터
     "삼성전자", "SK하이닉스", "반도체", "2차전지", "방산",
 ]
 
@@ -66,13 +66,13 @@ HOT_KEYWORDS_EN = [
     "sanctions", "tariff", "ceasefire", "war",
     # 기업
     "guidance", "earnings beat", "earnings miss", "downgrade", "upgrade",
-    # === 추가: 미국 증시·지수 ===
+    # 미국 증시·지수
     "S&P 500", "Nasdaq", "Dow Jones", "Russell 2000",
     "Treasury", "10-year yield",
-    # === 추가: 미국 빅테크 ===
+    # 미국 빅테크
     "Nvidia", "Apple", "Tesla", "Microsoft", "Google", "Amazon", "Meta",
     "semiconductor", "chip",
-    # === 추가: 트럼프/미국 정치 ===
+    # 트럼프/미국 정치
     "Trump", "trade war", "China tariff", "Korea tariff",
     "executive order", "Musk", "DOGE",
     "shutdown", "debt ceiling", "election",
@@ -94,6 +94,23 @@ def is_hot(title, summary=""):
         if kw.lower() in text:
             return kw
     return None
+
+
+def is_paid_article(link, title):
+    """유료/구독 전용 기사 필터링"""
+    # 한경 프리미엄 (URL 끝에 알파벳)
+    if "hankyung.com/article/" in link:
+        article_id = link.rstrip("/").split("/")[-1]
+        if article_id and not article_id.isdigit():
+            return True
+    
+    # 한경 마켓PRO 시리즈 (제목 기반)
+    paid_markers = ["[마켓PRO]", "[프리미엄]", "[한경 코리아마켓]"]
+    for marker in paid_markers:
+        if marker in title:
+            return True
+    
+    return False
 
 
 def parse_time(entry):
@@ -148,22 +165,6 @@ def fetch_dart_disclosures():
         print(f"DART 실패: {e}")
     return items
 
-def is_paid_article(link, title):
-    """유료/구독 전용 기사 필터링"""
-    # 한경 프리미엄 (URL 끝에 알파벳)
-    if "hankyung.com/article/" in link:
-        # 마지막 부분이 숫자가 아니면 (i, m 등 알파벳이 붙으면) 유료
-        article_id = link.rstrip("/").split("/")[-1]
-        if article_id and not article_id.isdigit():
-            return True
-    
-    # 한경 마켓PRO 시리즈 (제목 기반)
-    paid_markers = ["[마켓PRO]", "[프리미엄]", "[한경 코리아마켓]", "마켓PRO 5"]
-    for marker in paid_markers:
-        if marker in title:
-            return True
-    
-    return False
 
 def fetch_all():
     items = []
@@ -172,13 +173,14 @@ def fetch_all():
     for source, (url, region) in FEEDS.items():
         try:
             feed = fetch_feed(url)
+            collected = 0
             for entry in feed.entries[:25]:
                 pub = parse_time(entry)
                 if pub < cutoff:
                     continue
                 title = entry.get("title", "").strip()
                 summary = entry.get("summary", "")[:300]
-                kw = is_hot(title, summary)
+                link = entry.get("link", "")
                 # 유료 기사 필터링
                 if is_paid_article(link, title):
                     continue
@@ -189,12 +191,13 @@ def fetch_all():
                     "source": source,
                     "region": region,
                     "title": title,
-                    "link": entry.get("link", ""),
+                    "link": link,
                     "keyword": kw,
                     "time": pub.isoformat(),
                     "time_ts": pub.timestamp(),
                 })
-            print(f"  {source}: {len(feed.entries)}건 수집")
+                collected += 1
+            print(f"  {source}: {len(feed.entries)}건 중 {collected}건 HOT 매칭")
         except Exception as e:
             print(f"  {source}: 실패 ({str(e)[:50]})")
     
