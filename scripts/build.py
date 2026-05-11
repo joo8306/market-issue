@@ -148,6 +148,22 @@ def fetch_dart_disclosures():
         print(f"DART 실패: {e}")
     return items
 
+def is_paid_article(link, title):
+    """유료/구독 전용 기사 필터링"""
+    # 한경 프리미엄 (URL 끝에 알파벳)
+    if "hankyung.com/article/" in link:
+        # 마지막 부분이 숫자가 아니면 (i, m 등 알파벳이 붙으면) 유료
+        article_id = link.rstrip("/").split("/")[-1]
+        if article_id and not article_id.isdigit():
+            return True
+    
+    # 한경 마켓PRO 시리즈 (제목 기반)
+    paid_markers = ["[마켓PRO]", "[프리미엄]", "[한경 코리아마켓]", "마켓PRO 5"]
+    for marker in paid_markers:
+        if marker in title:
+            return True
+    
+    return False
 
 def fetch_all():
     items = []
@@ -162,6 +178,10 @@ def fetch_all():
                     continue
                 title = entry.get("title", "").strip()
                 summary = entry.get("summary", "")[:300]
+                kw = is_hot(title, summary)
+                # 유료 기사 필터링
+                if is_paid_article(link, title):
+                    continue
                 kw = is_hot(title, summary)
                 if not kw:
                     continue
