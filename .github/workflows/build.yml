@@ -2,9 +2,7 @@ name: Build News Dashboard
 
 on:
   schedule:
-    # 한국 장중(09:00-15:30 KST = 00:00-06:30 UTC) 10분마다, 그 외 시간 1시간마다
-    - cron: '*/5 0-6 * * 1-5'    # 한국 장중 (월~금)
-    - cron: '*/15 * * * *'          # 그 외 시간 1시간마다
+    - cron: '*/5 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -25,7 +23,7 @@ jobs:
       - run: pip install feedparser
       - name: Build site
         env:
-          DART_API_KEY: ${{ secrets.DART_API_KEY }}  # 옵션: Settings > Secrets에 등록
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: python scripts/build.py
       - uses: actions/upload-pages-artifact@v3
         with:
