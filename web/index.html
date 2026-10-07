@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>HOT 시장 이슈</title>
+<meta name="description" content="한국·글로벌 주요 시장 이슈 실시간 대시보드">
+<meta property="og:title" content="HOT 시장 이슈">
+<meta property="og:description" content="한국·글로벌 주요 시장 이슈 실시간 대시보드">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="HOT이슈">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div class="title"><span class="blink">●</span> HOT_ISSUES</div>
+    <div class="header-right">
+      <button class="icon-btn" id="refresh-btn" type="button" aria-label="새로고침" title="새로고침">↻</button>
+      <button class="icon-btn" id="notify-btn" type="button" aria-label="알림 켜기" title="새 긴급 이슈 알림 켜기" hidden>🔔</button>
+    </div>
+  </header>
+
+  <div class="status" id="status">
+    <span class="markets" id="markets"></span>
+    <span id="updated">-</span>
+    <span class="dot-sep">·</span>
+    <span id="checked"></span>
+  </div>
+  <div class="notice" id="notice" hidden></div>
+
+  <nav class="tabs" id="tabs" role="tablist">
+    <button type="button" data-tab="all" class="active">전체 <span class="cnt"></span></button>
+    <button type="button" data-tab="KR">한국 <span class="cnt"></span></button>
+    <button type="button" data-tab="GLOBAL">해외 <span class="cnt"></span></button>
+    <button type="button" data-tab="urgent">긴급 <span class="cnt"></span></button>
+  </nav>
+
+  <div class="filters">
+    <input type="search" id="search" placeholder="검색 (예: 엔비디아, Fed, 환율)" autocomplete="off">
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <main id="list"></main>
+
+  <footer class="footer">
+    <details>
+      <summary id="source-summary">수집 소스</summary>
+      <ul class="sources" id="sources"></ul>
+    </details>
+    <p>HOT 키워드 매칭 · 최근 <span id="lookback">24</span>시간 · 앱을 열어두면 1분마다 자동 갱신</p>
+  </footer>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>window.__INITIAL_DATA__ = /*__INITIAL_DATA__*/null;</script>
+<script src="app.js"></script>
+</body>
+</html>
