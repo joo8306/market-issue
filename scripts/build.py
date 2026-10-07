@@ -1,99 +1,65 @@
 """
-A안: RSS 기반 HOT 시장 이슈 대시보드
-- User-Agent 헤더로 403 우회
-- 한국 휴장일 자동 감지
-- 한경 프리미엄(유료) 기사 필터링
+HOT 시장 이슈 수집 → PWA 대시보드 빌드
+- 한국/글로벌 RSS 병렬 수집 (구글뉴스 경유 Reuters·Bloomberg·AP 포함)
+- 카테고리별 키워드 매칭 + 긴급 이슈 분류
+- 유료 기사 필터링, 매체 간 중복 기사 제거
 - DART 공시 옵션 (DART_API_KEY 환경변수 설정 시)
+- 결과: dist/ (index.html, data.json, PWA 파일)
 """
 
-import feedparser
-import urllib.request
-import json
+import hashlib
 import html
+import json
 import os
+import re
+import shutil
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-# ===== User-Agent 설정 (필수) =====
+import feedparser
+
+import config
+
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 feedparser.USER_AGENT = UA
 
-# ===== 뉴스 소스 =====
-FEEDS = {
-    # 한국
-    "한경 증권": ("https://www.hankyung.com/feed/finance", "KR"),
-    "한경 경제": ("https://www.hankyung.com/feed/economy", "KR"),
-    "한경 국제": ("https://www.hankyung.com/feed/international", "KR"),
-    "연합 경제": ("https://www.yna.co.kr/rss/economy.xml", "KR"),
-    "연합 증권": ("https://www.yna.co.kr/rss/market.xml", "KR"),
-    # 글로벌
-    "Yahoo Finance": ("https://finance.yahoo.com/news/rssindex", "GLOBAL"),
-    "Investing": ("https://www.investing.com/rss/news.rss", "GLOBAL"),
-    "CNBC Top": ("https://www.cnbc.com/id/100003114/device/rss/rss.html", "GLOBAL"),
-    "CNBC Markets": ("https://www.cnbc.com/id/10000664/device/rss/rss.html", "GLOBAL"),
-    "MarketWatch": ("https://feeds.marketwatch.com/marketwatch/topstories/", "GLOBAL"),
-    "WSJ Markets": ("https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "GLOBAL"),
-    "BBC Business": ("http://feeds.bbci.co.uk/news/business/rss.xml", "GLOBAL"),
-}
-
-# ===== HOT 키워드 =====
-HOT_KEYWORDS_KR = [
-    # 매크로
-    "한국은행", "기준금리", "금통위", "CPI", "물가", "환율", "원달러",
-    # 정책·규제
-    "공매도", "거래정지", "관리종목", "상장폐지", "공시",
-    # 기업 이벤트
-    "감자", "유상증자", "전환사채", "리픽싱", "자사주", "배당",
-    # 시장
-    "코스피", "코스닥", "외국인",
-    # 금융당국
-    "금감원", "금융위", "거래소", "FSC", "FSS",
-    # 미국 영향
-    "트럼프", "관세", "美국", "무역분쟁", "무역전쟁",
-    "엔비디아", "테슬라", "애플",
-    # 한국 주요 종목·섹터
-    "삼성전자", "SK하이닉스", "반도체", "2차전지", "방산",
-]
-
-HOT_KEYWORDS_EN = [
-    # 중앙은행
-    "Fed", "FOMC", "rate cut", "rate hike", "CPI", "PCE", "Powell", "BOJ", "ECB",
-    # 시장 반응
-    "selloff", "rally", "plunge", "surge", "crash", "halt",
-    # 리스크
-    "risk-off", "VIX", "DXY", "yields",
-    # 지정학
-    "sanctions", "tariff", "ceasefire", "war",
-    # 기업
-    "guidance", "earnings beat", "earnings miss", "downgrade", "upgrade",
-    # 미국 증시·지수
-    "S&P 500", "Nasdaq", "Dow Jones", "Russell 2000",
-    "Treasury", "10-year yield",
-    # 미국 빅테크
-    "Nvidia", "Apple", "Tesla", "Microsoft", "Google", "Amazon", "Meta",
-    "semiconductor", "chip",
-    # 트럼프/미국 정치
-    "Trump", "trade war", "China tariff", "Korea tariff",
-    "executive order", "Musk", "DOGE",
-    "shutdown", "debt ceiling", "election",
-]
-
-LOOKBACK_HOURS = 24
+KST = timezone(timedelta(hours=9))
+ROOT = Path(__file__).resolve().parent.parent
+WEB_DIR = ROOT / "web"
+OUT_DIR = ROOT / "dist"
 
 
-def is_kr_market_open(dt):
-    return dt.weekday() < 5
+# ===== 키워드 매칭 =====
+def _en_pattern(kw):
+    # 단어 단위 매칭: "war" 가 "software"/"warn" 에 걸리지 않도록.
+    # 짧은 약어(AI, Fed 등)는 복수형만 허용 ("AI"+"d" = "aid" 방지)
+    suffix = "(?:s)?" if len(kw) <= 3 else "(?:s|es|ed|d|ing)?"
+    return re.compile(r"\b" + re.escape(kw) + suffix + r"\b", re.IGNORECASE)
 
 
-def is_hot(title, summary=""):
-    text = (title + " " + summary).lower()
-    for kw in HOT_KEYWORDS_KR:
-        if kw.lower() in text:
-            return kw
-    for kw in HOT_KEYWORDS_EN:
-        if kw.lower() in text:
-            return kw
-    return None
+EN_MATCHERS = [(cat, kw, _en_pattern(kw)) for cat, kws in config.KEYWORDS_EN.items() for kw in kws]
+KR_MATCHERS = [(cat, kw) for cat, kws in config.KEYWORDS_KR.items() for kw in kws]
+URGENT_EN = [_en_pattern(kw) for kw in config.URGENT_EN]
+
+
+def classify(title, summary="", region="GLOBAL"):
+    """(category, keyword) 반환. HOT 아니면 None"""
+    text = f"{title} {summary}"
+    lower = text.lower()
+    kr_hit = next(((c, k) for c, k in KR_MATCHERS if k.lower() in lower), None)
+    en_hit = next(((c, k) for c, k, p in EN_MATCHERS if p.search(text)), None)
+    # 소스 지역 언어의 매칭을 우선
+    if region == "KR":
+        return kr_hit or en_hit
+    return en_hit or kr_hit
+
+
+def is_urgent(title):
+    if any(k in title for k in config.URGENT_KR):
+        return True
+    return any(p.search(title) for p in URGENT_EN)
 
 
 def is_paid_article(link, title):
@@ -103,298 +69,233 @@ def is_paid_article(link, title):
         article_id = link.rstrip("/").split("/")[-1]
         if article_id and not article_id.isdigit():
             return True
-    
     # 한경 마켓PRO 시리즈 (제목 기반)
     paid_markers = ["[마켓PRO]", "[프리미엄]", "[한경 코리아마켓]"]
-    for marker in paid_markers:
-        if marker in title:
-            return True
-    
-    return False
+    return any(m in title for m in paid_markers)
 
 
+# ===== 중복 제거용 정규화 =====
+def split_publisher(title):
+    """구글뉴스 제목 'Headline - Reuters' → ('Headline', 'Reuters')"""
+    m = re.match(r"^(.*\S)\s+[-–—|]\s+([^-–—|]{2,40})$", title)
+    if m:
+        return m.group(1), m.group(2).strip()
+    return title, None
+
+
+def normalize_title(title):
+    t = split_publisher(title)[0].lower()
+    t = re.sub(r"[\[\(【<].*?[\]\)】>]", " ", t)  # [속보], (종합) 등 말머리 제거
+    t = re.sub(r"[^0-9a-z가-힣]+", "", t)
+    return t[:60]
+
+
+def item_id(title):
+    return hashlib.sha1(normalize_title(title).encode("utf-8")).hexdigest()[:12]
+
+
+# ===== 수집 =====
 def parse_time(entry):
     for key in ("published_parsed", "updated_parsed"):
         t = entry.get(key)
         if t:
             return datetime(*t[:6], tzinfo=timezone.utc)
-    return datetime.now(timezone.utc)
+    return None
 
 
 def fetch_feed(url):
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Cache-Control": "no-cache"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = resp.read()
     return feedparser.parse(data)
 
 
+def collect_source(source, url, region, opts, cutoff, now):
+    """한 소스 수집 → (items, health)"""
+    items = []
+    try:
+        feed = fetch_feed(url)
+        entries = feed.entries[: opts.get("limit", config.DEFAULT_FEED_LIMIT)]
+        for entry in entries:
+            pub = parse_time(entry)
+            if pub is None:
+                pub = now  # 날짜 없는 기사는 수집 시각으로
+            if pub < cutoff:
+                continue
+            title = html.unescape(entry.get("title", "")).strip()
+            if not title:
+                continue
+            link = entry.get("link", "")
+            if is_paid_article(link, title):
+                continue
+            summary = re.sub(r"<[^>]+>", " ", entry.get("summary", ""))[:300]
+
+            if opts.get("take_all"):
+                hit = (opts.get("category", "기타"), source)
+            else:
+                hit = classify(title, summary, region)
+            if not hit:
+                continue
+
+            headline, publisher = split_publisher(title) if "news.google.com" in url else (title, None)
+            src_meta = entry.get("source") or {}
+            publisher = src_meta.get("title") or publisher
+            items.append({
+                "id": item_id(title),
+                "source": source,
+                "publisher": publisher,
+                "region": region,
+                "category": hit[0],
+                "keyword": hit[1],
+                "urgent": bool(opts.get("urgent")) or is_urgent(headline),
+                "title": headline,
+                "link": link,
+                "time": pub.isoformat(),
+                "time_ts": int(pub.timestamp()),
+            })
+        health = {"name": source, "region": region, "ok": True,
+                  "entries": len(feed.entries), "hot": len(items)}
+        if not feed.entries:
+            health["ok"] = False
+            health["error"] = "빈 피드"
+        print(f"  {source}: {len(feed.entries)}건 중 {len(items)}건 HOT")
+    except Exception as e:
+        health = {"name": source, "region": region, "ok": False, "entries": 0, "hot": 0,
+                  "error": str(e)[:80]}
+        print(f"  {source}: 실패 ({str(e)[:80]})")
+    return items, health
+
+
 def fetch_dart_disclosures():
     api_key = os.getenv("DART_API_KEY")
     if not api_key:
-        return []
+        return [], None
 
-    today = datetime.now(timezone(timedelta(hours=9))).strftime("%Y%m%d")
-    url = f"https://opendart.fss.or.kr/api/list.json?crtfc_key={api_key}&bgn_de={today}&page_count=50"
-    
-    HOT_DART = ["감자", "유상증자", "전환사채", "자사주", "거래정지", "관리종목"]
-    
+    today = datetime.now(KST).strftime("%Y%m%d")
+    url = f"https://opendart.fss.or.kr/api/list.json?crtfc_key={api_key}&bgn_de={today}&page_count=100"
+
     items = []
     try:
         req = urllib.request.Request(url, headers={"User-Agent": UA})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
-        
+
         for d in data.get("list", []):
             report_nm = d.get("report_nm", "")
-            for kw in HOT_DART:
-                if kw in report_nm:
-                    rcept_dt = d.get("rcept_dt", "")
-                    rcept_no = d.get("rcept_no", "")
-                    pub = datetime.strptime(rcept_dt, "%Y%m%d").replace(tzinfo=timezone(timedelta(hours=9)))
-                    items.append({
-                        "source": "DART 공시",
-                        "region": "KR",
-                        "title": f"[{d.get('corp_name', '')}] {report_nm}",
-                        "link": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}",
-                        "keyword": kw,
-                        "time": pub.isoformat(),
-                        "time_ts": pub.timestamp(),
-                    })
-                    break
+            kw = next((k for k in config.DART_KEYWORDS if k in report_nm), None)
+            if not kw:
+                continue
+            rcept_no = d.get("rcept_no", "")
+            pub = datetime.strptime(d.get("rcept_dt", today), "%Y%m%d").replace(tzinfo=KST)
+            title = f"[{d.get('corp_name', '')}] {report_nm}"
+            items.append({
+                "id": item_id(title + rcept_no),
+                "source": "DART 공시",
+                "publisher": None,
+                "region": "KR",
+                "category": "기업이벤트",
+                "keyword": kw,
+                "urgent": kw in ("거래정지", "상장폐지"),
+                "title": title,
+                "link": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}",
+                "time": pub.isoformat(),
+                "time_ts": int(pub.timestamp()),
+            })
+        print(f"  DART 공시: {len(items)}건")
+        return items, {"name": "DART 공시", "region": "KR", "ok": True,
+                       "entries": len(data.get("list", [])), "hot": len(items)}
     except Exception as e:
-        print(f"DART 실패: {e}")
-    return items
+        print(f"  DART 실패: {e}")
+        return [], {"name": "DART 공시", "region": "KR", "ok": False, "entries": 0, "hot": 0,
+                    "error": str(e)[:80]}
+
+
+def dedupe(items):
+    """같은 기사(정규화 제목 기준)는 가장 먼저 보도된 것 하나만 남기고, 보도 매체 수를 기록"""
+    by_id = {}
+    for it in sorted(items, key=lambda x: x["time_ts"]):
+        if it["id"] in by_id:
+            kept = by_id[it["id"]]
+            kept["also"] = sorted(set(kept.get("also", [])) | {it["source"]})
+            kept["urgent"] = kept["urgent"] or it["urgent"]
+        else:
+            by_id[it["id"]] = it
+    return sorted(by_id.values(), key=lambda x: x["time_ts"], reverse=True)
 
 
 def fetch_all():
-    items = []
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
-    
-    for source, (url, region) in FEEDS.items():
-        try:
-            feed = fetch_feed(url)
-            collected = 0
-            for entry in feed.entries[:25]:
-                pub = parse_time(entry)
-                if pub < cutoff:
-                    continue
-                title = entry.get("title", "").strip()
-                summary = entry.get("summary", "")[:300]
-                link = entry.get("link", "")
-                # 유료 기사 필터링
-                if is_paid_article(link, title):
-                    continue
-                kw = is_hot(title, summary)
-                if not kw:
-                    continue
-                items.append({
-                    "source": source,
-                    "region": region,
-                    "title": title,
-                    "link": link,
-                    "keyword": kw,
-                    "time": pub.isoformat(),
-                    "time_ts": pub.timestamp(),
-                })
-                collected += 1
-            print(f"  {source}: {len(feed.entries)}건 중 {collected}건 HOT 매칭")
-        except Exception as e:
-            print(f"  {source}: 실패 ({str(e)[:50]})")
-    
-    dart_items = fetch_dart_disclosures()
-    if dart_items:
-        items.extend(dart_items)
-        print(f"  DART 공시: {len(dart_items)}건")
-    
-    seen = set()
-    unique = []
-    for it in sorted(items, key=lambda x: x["time_ts"], reverse=True):
-        if it["title"] in seen:
-            continue
-        seen.add(it["title"])
-        unique.append(it)
-    return unique
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=config.LOOKBACK_HOURS)
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        futures = [pool.submit(collect_source, name, url, region, opts, cutoff, now)
+                   for name, (url, region, opts) in config.FEEDS.items()]
+        results = [f.result() for f in futures]
+
+    items, health = [], []
+    for its, h in results:
+        items.extend(its)
+        health.append(h)
+
+    dart_items, dart_health = fetch_dart_disclosures()
+    items.extend(dart_items)
+    if dart_health:
+        health.append(dart_health)
+
+    return dedupe(items), health
 
 
-def generate_html(items):
-    kst = timezone(timedelta(hours=9))
-    now_kst_dt = datetime.now(kst)
-    now_kst = now_kst_dt.strftime("%Y-%m-%d %H:%M KST")
-    
-    market_open = is_kr_market_open(now_kst_dt)
-    
-    kr_items = [i for i in items if i["region"] == "KR"]
-    global_items = [i for i in items if i["region"] == "GLOBAL"]
-    
-    def render_row(it):
-        t = datetime.fromisoformat(it["time"]).astimezone(kst)
-        time_str = t.strftime("%m-%d %H:%M")
-        return f"""
-        <a class="row" href="{html.escape(it['link'])}" target="_blank" rel="noopener">
-          <div class="row-time">{time_str}</div>
-          <div class="row-content">
-            <div class="row-title">{html.escape(it['title'])}</div>
-            <div class="row-meta">
-              <span class="kw">{html.escape(it['keyword'])}</span>
-              <span class="src">{html.escape(it['source'])}</span>
-            </div>
-          </div>
-        </a>"""
-    
-    kr_html = "\n".join(render_row(i) for i in kr_items) or '<div class="empty">최근 24시간 내 HOT 이슈 없음</div>'
-    global_html = "\n".join(render_row(i) for i in global_items) or '<div class="empty">최근 24시간 내 HOT 이슈 없음</div>'
-    
-    notice_html = ""
-    if not market_open:
-        notice_html = """
-        <div class="notice">
-          <strong>NOTICE</strong> 한국 증시 휴장일 — 글로벌 시장 동향 위주로 표시됩니다
-        </div>"""
-    
-    return f"""<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HOT MARKET ISSUES — {now_kst}</title>
-<meta property="og:title" content="HOT MARKET ISSUES">
-<meta property="og:description" content="한국+글로벌 주요 시장 이슈 ({now_kst})">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-:root {{
-  --bg: #0a0a0a; --bg-card: #121212; --border: #1f1f1f;
-  --text: #e8e8e8; --text-dim: #888; --text-faint: #555;
-  --accent: #ff8c00; --kr: #ff5555; --global: #5599ff;
-}}
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{
-  background: var(--bg); color: var(--text);
-  font-family: 'IBM Plex Sans KR', 'JetBrains Mono', sans-serif;
-  font-size: 14px; line-height: 1.5; min-height: 100vh;
-  padding: 20px 16px 60px;
-}}
-.container {{ max-width: 900px; margin: 0 auto; }}
-.header {{
-  border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px;
-  display: flex; justify-content: space-between; align-items: flex-end;
-  flex-wrap: wrap; gap: 12px;
-}}
-.title {{ font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }}
-.title .blink {{ color: var(--accent); animation: blink 1.5s infinite; }}
-@keyframes blink {{ 0%, 50% {{ opacity: 1; }} 51%, 100% {{ opacity: 0.3; }} }}
-.timestamp {{ font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-dim); }}
-.timestamp .label {{ color: var(--text-faint); }}
-.notice {{
-  background: #1a1a1a; border-left: 3px solid var(--accent);
-  padding: 10px 14px; margin-bottom: 16px;
-  font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-dim);
-}}
-.notice strong {{ color: var(--accent); margin-right: 8px; }}
-.stats {{
-  display: flex; gap: 24px; font-family: 'JetBrains Mono', monospace;
-  font-size: 12px; color: var(--text-dim); margin-bottom: 24px;
-  padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--border);
-}}
-.stats .num {{ color: var(--accent); font-weight: 700; }}
-.section {{ margin-bottom: 32px; }}
-.section-header {{
-  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
-  padding-bottom: 8px; border-bottom: 1px dashed var(--border);
-}}
-.section-tag {{
-  font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;
-  letter-spacing: 1px; padding: 3px 8px; border: 1px solid;
-}}
-.tag-kr {{ color: var(--kr); border-color: var(--kr); }}
-.tag-global {{ color: var(--global); border-color: var(--global); }}
-.section-title {{ font-size: 13px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; }}
-.section-count {{ margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-faint); }}
-.row {{
-  display: flex; gap: 16px; padding: 12px 14px; border-bottom: 1px solid var(--border);
-  text-decoration: none; color: inherit; transition: background 0.15s;
-}}
-.row:hover {{ background: var(--bg-card); }}
-.row-time {{
-  font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-faint);
-  flex-shrink: 0; width: 80px; padding-top: 2px;
-}}
-.row-content {{ flex: 1; min-width: 0; }}
-.row-title {{ font-size: 14px; font-weight: 500; line-height: 1.45; margin-bottom: 4px; }}
-.row-meta {{ display: flex; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }}
-.kw {{ color: var(--accent); font-weight: 700; }}
-.kw::before {{ content: "● "; }}
-.src {{ color: var(--text-faint); }}
-.src::before {{ content: "/ "; }}
-.empty {{
-  padding: 24px; text-align: center; color: var(--text-faint);
-  font-family: 'JetBrains Mono', monospace; font-size: 12px; border: 1px dashed var(--border);
-}}
-.footer {{
-  margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border);
-  font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint);
-  text-align: center; line-height: 1.7;
-}}
-@media (max-width: 600px) {{
-  body {{ font-size: 13px; padding: 16px 12px 40px; }}
-  .title {{ font-size: 18px; }}
-  .row {{ flex-direction: column; gap: 4px; padding: 10px 12px; }}
-  .row-time {{ width: auto; font-size: 11px; }}
-  .stats {{ gap: 14px; flex-wrap: wrap; }}
-}}
-</style>
-</head>
-<body>
-<div class="container">
-  <div class="header">
-    <div class="title"><span class="blink">●</span> HOT_ISSUES</div>
-    <div class="timestamp"><span class="label">UPDATED:</span> {now_kst}</div>
-  </div>
-  {notice_html}
-  <div class="stats">
-    <div><span class="label">총 이슈</span> <span class="num">{len(items)}</span></div>
-    <div><span class="label">한국</span> <span class="num">{len(kr_items)}</span></div>
-    <div><span class="label">글로벌</span> <span class="num">{len(global_items)}</span></div>
-    <div><span class="label">조회 범위</span> <span class="num">{LOOKBACK_HOURS}H</span></div>
-  </div>
-  <div class="section">
-    <div class="section-header">
-      <span class="section-tag tag-kr">KR</span>
-      <span class="section-title">한국 시장</span>
-      <span class="section-count">{len(kr_items)} items</span>
-    </div>
-    {kr_html}
-  </div>
-  <div class="section">
-    <div class="section-header">
-      <span class="section-tag tag-global">GLOBAL</span>
-      <span class="section-title">해외 시장 / 매크로</span>
-      <span class="section-count">{len(global_items)} items</span>
-    </div>
-    {global_html}
-  </div>
-  <div class="footer">
-    소스: 한경 · 연합 · Yahoo Finance · Investing · CNBC · MarketWatch · WSJ · BBC · DART(옵션)<br>
-    HOT 키워드 매칭 / 최근 {LOOKBACK_HOURS}시간 / GitHub Actions 자동 갱신
-  </div>
-</div>
-</body>
-</html>"""
+# ===== 사이트 생성 =====
+def asset_version():
+    """웹 자산이 바뀔 때만 서비스워커 캐시를 갱신하도록 내용 해시 사용"""
+    h = hashlib.sha1()
+    for p in sorted(WEB_DIR.rglob("*")):
+        if p.is_file():
+            h.update(p.relative_to(WEB_DIR).as_posix().encode())
+            h.update(p.read_bytes())
+    return h.hexdigest()[:10]
+
+
+def build_site(payload, out_dir=OUT_DIR):
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    shutil.copytree(WEB_DIR, out_dir)
+
+    data_json = json.dumps(payload, ensure_ascii=False)
+    (out_dir / "data.json").write_text(data_json, encoding="utf-8")
+
+    # 첫 화면을 바로 그리기 위해 index.html 에 데이터를 인라인으로 삽입
+    index = out_dir / "index.html"
+    inline = data_json.replace("</", "<\\/")
+    index.write_text(
+        index.read_text(encoding="utf-8").replace("/*__INITIAL_DATA__*/null", inline),
+        encoding="utf-8",
+    )
+
+    sw = out_dir / "sw.js"
+    sw.write_text(sw.read_text(encoding="utf-8").replace("__VERSION__", asset_version()),
+                  encoding="utf-8")
 
 
 def main():
-    items = fetch_all()
-    print(f"\n총 HOT 이슈: {len(items)}건")
-    
-    out_dir = Path("dist")
-    out_dir.mkdir(exist_ok=True)
-    
-    (out_dir / "index.html").write_text(generate_html(items), encoding="utf-8")
-    (out_dir / "data.json").write_text(
-        json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    print("HTML 생성 완료: dist/index.html")
+    print("수집 시작")
+    items, health = fetch_all()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "generated_at": now.isoformat(),
+        "generated_ts": int(now.timestamp()),
+        "lookback_hours": config.LOOKBACK_HOURS,
+        "kr_holidays": config.KR_HOLIDAYS,
+        "sources": health,
+        "items": items,
+    }
+    build_site(payload)
+
+    ok = sum(1 for h in health if h["ok"])
+    kr = sum(1 for i in items if i["region"] == "KR")
+    print(f"\n총 HOT 이슈 {len(items)}건 (한국 {kr} / 글로벌 {len(items) - kr}), "
+          f"긴급 {sum(1 for i in items if i['urgent'])}건, 소스 {ok}/{len(health)} 정상")
+    print(f"빌드 완료: {OUT_DIR}")
 
 
 if __name__ == "__main__":

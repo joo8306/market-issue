@@ -2,8 +2,15 @@ name: Build News Dashboard
 
 on:
   schedule:
+    # GitHub 예약 실행은 부하에 따라 수~수십 분 지연될 수 있음
+    # → 정확한 주기가 필요하면 README 의 "외부 트리거" 설정 참고
     - cron: '*/5 * * * *'
   workflow_dispatch:
+    inputs:
+      test_alert:
+        description: '텔레그램 테스트 메시지 보내기'
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -12,19 +19,45 @@ permissions:
   pages: write
   id-token: write
 
+# 실행이 겹치면 알림이 중복 발송될 수 있으므로 한 번에 하나씩
+concurrency:
+  group: news-build
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install feedparser
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      # 알림 발송 기록 (실행 간 유지)
+      - uses: actions/cache@v4
+        with:
+          path: .state
+          key: alert-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: alert-state-
+
       - name: Build site
         env:
-          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}  # 옵션
         run: python scripts/build.py
+
+      - name: Telegram alerts
+        continue-on-error: true   # 알림 실패해도 대시보드 배포는 진행
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_MODE: ${{ vars.ALERT_MODE }}
+          DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          TEST_ALERT: ${{ inputs.test_alert }}
+        run: python scripts/notify.py
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
