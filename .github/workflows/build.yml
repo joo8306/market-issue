@@ -48,7 +48,10 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}  # 옵션
         run: python scripts/build.py
 
+      # 알림은 Cloudflare Worker 가 담당 → 중복 발송을 막기 위해 기본 꺼둠
+      # (GitHub 에서 보내려면 Settings > Variables 에 ALERT_VIA_GITHUB=true)
       - name: Telegram alerts
+        if: vars.ALERT_VIA_GITHUB == 'true'
         continue-on-error: true   # 알림 실패해도 대시보드 배포는 진행
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
