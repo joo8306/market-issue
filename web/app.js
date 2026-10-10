@@ -154,8 +154,14 @@
   function renderStatus() {
     const d = state.data;
     if (!d) return;
-    const ageMin = Math.floor((Date.now() / 1000 - d.generated_ts) / 60);
     const updated = $('updated');
+    if (!d.generated_ts) {
+      updated.textContent = '첫 수집 대기 중 (몇 분 내 자동 시작)';
+      updated.classList.remove('stale');
+      marketStatus();
+      return;
+    }
+    const ageMin = Math.floor((Date.now() / 1000 - d.generated_ts) / 60);
     updated.textContent = `서버 갱신 ${fmtKst(d.generated_ts)} (${relTime(d.generated_ts)})`;
     updated.classList.toggle('stale', ageMin >= STALE_MIN);
     if (ageMin >= STALE_MIN) updated.textContent += ' ⚠ 지연 중';
@@ -224,7 +230,7 @@
       if (!res.ok) throw new Error(res.status);
       const data = await res.json();
       state.lastChecked = Date.now();
-      if (!state.data || data.generated_ts > state.data.generated_ts) {
+      if (!state.data || (data.generated_ts || 0) > (state.data.generated_ts || 0)) {
         applyData(data, { notify: Boolean(state.data) });
       } else {
         renderStatus();
