@@ -7,6 +7,8 @@
     ALERT_MODE   : urgent(기본, 긴급만) | all(HOT 전부) | off
     DASHBOARD_URL: 메시지 하단 대시보드 링크
     TEST_ALERT   : "true" 면 테스트 메시지 1건 발송
+    BRIEFINGS    : 시황 초안 발송 종류 (기본 "overnight,closing", "off" 면 끔)
+                   overnight = 평일 06:30~09:00 해외시황 초안, closing = 평일 16:00~19:30 국내 마감시황 초안
 """
 
 import html
@@ -21,7 +23,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_FILE = ROOT / "dist" / "data.json"
+MARKET_FILE = ROOT / "dist" / "market.json"
 STATE_FILE = ROOT / ".state" / "sent.json"
+BRIEF_STATE_FILE = ROOT / ".state" / "briefings.json"
 
 KST = timezone(timedelta(hours=9))
 MAX_PER_RUN = 15         # 한 번에 상세히 보낼 최대 건수 (나머지는 "외 N건")
@@ -86,6 +90,74 @@ def build_messages(items, dashboard_url=None):
     return messages
 
 
+# ===== 시황 초안 =====
+BRIEF_WINDOWS = {
+    # 종류: (시작 분, 끝 분) KST
+    "overnight": (6 * 60 + 30, 9 * 60),
+    "closing": (16 * 60, 19 * 60 + 30),  # 투자자별 수급이 어느 정도 확정된 뒤
+}
+
+
+def is_business_day(now_kst, holidays):
+    return now_kst.weekday() < 5 and now_kst.strftime("%Y-%m-%d") not in holidays
+
+
+def due_briefings(market, now_kst, holidays, sent, kinds):
+    """지금 보내야 할 초안 목록 [(종류, draft)]"""
+    if not market or not is_business_day(now_kst, holidays):
+        return []
+    minutes = now_kst.hour * 60 + now_kst.minute
+    today = now_kst.strftime("%Y-%m-%d")
+    out = []
+    for kind in kinds:
+        start, end = BRIEF_WINDOWS.get(kind, (0, -1))
+        draft = (market.get("drafts") or {}).get(kind)
+        if not draft or not (start <= minutes <= end):
+            continue
+        if sent.get(kind) == draft["date"]:
+            continue  # 같은 거래일 초안은 한 번만
+        if kind == "closing":
+            kospi = ((market.get("kr") or {}).get("indices") or {}).get("KOSPI") or {}
+            if draft["date"] != today or kospi.get("status") != "CLOSE":
+                continue
+        if kind == "overnight":
+            age = (now_kst.date() - datetime.strptime(draft["date"], "%Y-%m-%d").date()).days
+            if age > 4:  # 美 휴장 등으로 오래된 데이터면 보내지 않음
+                continue
+        out.append((kind, draft))
+    return out
+
+
+def send_briefings(token, chat_id, payload, dashboard_url, now_kst=None):
+    import briefing  # 같은 폴더 모듈
+
+    kinds = [k.strip() for k in (os.getenv("BRIEFINGS") or "overnight,closing").lower().split(",") if k.strip()]
+    if "off" in kinds:
+        return
+    try:
+        market = json.loads(MARKET_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        print("market.json 없음 → 시황 초안 건너뜀")
+        return
+    now_kst = now_kst or datetime.now(KST)
+    try:
+        sent = json.loads(BRIEF_STATE_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        sent = {}
+    for kind, draft in due_briefings(market, now_kst, payload.get("kr_holidays", []), sent, kinds):
+        region = "GLOBAL" if kind == "overnight" else "KR"
+        heads = briefing.pick_headlines(payload.get("items", []), region, time.time() - 12 * 3600)
+        text = briefing.to_telegram(draft, heads, dashboard_url)
+        while len(text) > TG_LIMIT and heads:  # 길면 참고 헤드라인부터 줄임
+            heads = heads[:-1]
+            text = briefing.to_telegram(draft, heads, dashboard_url)
+        send_telegram(token, chat_id, text)
+        sent[kind] = draft["date"]
+        BRIEF_STATE_FILE.parent.mkdir(exist_ok=True)
+        BRIEF_STATE_FILE.write_text(json.dumps(sent), encoding="utf-8")
+        print(f"시황 초안 발송: {kind} {draft['date']}")
+
+
 def send_telegram(token, chat_id, text):
     body = urllib.parse.urlencode({
         "chat_id": chat_id,
@@ -120,6 +192,11 @@ def main():
 
     payload = json.loads(DATA_FILE.read_text(encoding="utf-8"))
     items = payload["items"]
+
+    try:
+        send_briefings(token, chat_id, payload, dashboard_url)
+    except Exception as e:  # 초안 발송 실패가 뉴스 알림을 막지 않도록
+        print(f"시황 초안 발송 실패: {e}", file=sys.stderr)
     state = load_state()
     now = time.time()
 
