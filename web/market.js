@@ -68,7 +68,7 @@
           const isRate = r.symbol === '^TNX';
           const chg = isRate ? `${((r.close - r.prev) * 100).toFixed(1)}bp` : pct(r.pct);
           return `<tr><th>${esc(r.name)}</th><td class="num">${fmt(r.close, isRate ? 3 : 2)}${isRate ? '%' : ''}</td>
-            <td class="num ${dirClass(r.close - r.prev)}">${chg}</td><td class="num muted">${esc((r.date || '').slice(5))}</td></tr>`;
+            <td class="num ${dirClass(r.close - r.prev)}">${chg}</td><td class="num muted" title="출처 ${esc(r.source || '')}">${esc((r.date || '').slice(5))}</td></tr>`;
         }).join('')}
       </tbody></table>`;
     }).join('');

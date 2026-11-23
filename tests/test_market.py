@@ -71,6 +71,35 @@ class YahooParseTest(unittest.TestCase):
         self.assertIsNone(md.row_on(ftse, "2020-01-01"))
 
 
+class NaverWorldTest(unittest.TestCase):
+    def test_index_daily(self):
+        row = md.row_from_daily(md.parse_naver_daily(fixture_json("naver_world_dji_price.json")))
+        self.assertEqual((row["date"], row["close"], row["prev"]), ("2026-11-20", 48147.33, 49097.06))
+        self.assertAlmostEqual(row["pct"], -1.934, places=2)
+        self.assertLess(row["open_pct"], 0)  # 시가도 있어 출발 방향 판단 가능
+        self.assertEqual(row["series"][-1], ["2026-11-20", 48147.33])
+
+    def test_bond_daily(self):
+        rows = fixture_json("naver_bond_us10y.json")["result"]
+        row = md.row_from_daily(md.parse_naver_daily(rows))
+        self.assertEqual(row["close"], 4.912)
+
+    def test_fallback_when_yahoo_blocked(self):
+        from unittest import mock
+        dji = md.row_from_daily(md.parse_naver_daily(fixture_json("naver_world_dji_price.json")))
+
+        def fake_http(url, **kw):
+            raise RuntimeError("HTTP Error 429")
+
+        with mock.patch.object(md, "http_json", fake_http), \
+                mock.patch.object(md, "fetch_naver_daily", lambda kind, code: dict(dji)):
+            out = md.fetch_overseas()
+        us = [r for r in out["items"] if r["symbol"] in md.US_MAIN]
+        self.assertTrue(all(r["source"] == "네이버" and r["close"] == 48147.33 for r in us))
+        ewy = next(r for r in out["items"] if r["symbol"] == "EWY")
+        self.assertEqual(ewy["error"], "데이터 없음")
+
+
 class OvernightDraftTest(unittest.TestCase):
     def test_from_fixture(self):
         sp = md.parse_spark(fixture_json("yahoo_spark.json"))

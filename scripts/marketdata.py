@@ -15,6 +15,7 @@ KST = timezone(timedelta(hours=9))
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 NAVER = "https://m.stock.naver.com/api"
+NAVER_FRONT = "https://m.stock.naver.com/front-api"
 YAHOO = "https://query1.finance.yahoo.com"
 
 # 해외시장 브리핑 대상 (야후 심볼 → 표시 이름, 그룹)
@@ -39,6 +40,17 @@ OVERSEAS = [
 ]
 US_MAIN = ["^DJI", "^IXIC", "^GSPC"]
 EU_MAIN = ["^FTSE", "^FCHI", "^GDAXI"]
+
+# 야후가 막힐 때 쓰는 네이버 대체 경로 (야후 심볼 → (종류, 코드))
+NAVER_WORLD = "https://api.stock.naver.com"
+NAVER_MAP = {
+    "^DJI": ("index", ".DJI"), "^IXIC": ("index", ".IXIC"), "^GSPC": ("index", ".INX"),
+    "^SOX": ("index", ".SOX"), "^VIX": ("index", ".VIX"),
+    "^FTSE": ("index", ".FTSE"), "^FCHI": ("index", ".FCHI"), "^GDAXI": ("index", ".GDAXI"),
+    "^N225": ("index", ".N225"), "000001.SS": ("index", ".SSEC"),
+    "^TNX": ("bond", "US10YT=RR"), "KRW=X": ("exchange", "FX_USDKRW"),
+    "CL=F": ("energy", "CLcv1"), "GC=F": ("metals", "GCcv1"),
+}
 
 
 # ===== 공통 =====
@@ -240,26 +252,85 @@ def parse_chart_open(payload):
     return {"date": d, "open": o, "high": h, "low": l}
 
 
+def parse_naver_daily(rows):
+    """네이버 일별 시세(해외지수·금리·원자재·환율) → 날짜 오름차순 [(날짜, 종가, 시가, 고가, 저가)]
+    날짜는 각 시장 현지 날짜 (localTradedAt 앞 10자리)"""
+    pts = {}
+    for r in rows or []:
+        d = (r.get("localTradedAt") or "")[:10]
+        c = num(r.get("closePrice"))
+        if d and c is not None:
+            pts[d] = (d, c, num(r.get("openPrice")), num(r.get("highPrice")), num(r.get("lowPrice")))
+    return [pts[d] for d in sorted(pts)]
+
+
+def row_from_daily(pts):
+    """일별 시세 → spark 와 같은 모양의 행 (+ 마지막 날 시가·고가·저가)"""
+    if len(pts) < 2:
+        return None
+    (d0, prev, *_), (d1, close, o, h, lo) = pts[-2], pts[-1]
+    row = {"date": d1, "close": close, "prev": prev, "prev_date": d0, "pct": pct(close, prev),
+           "series": [[d, c] for d, c, *_ in pts[-6:]]}
+    if o:  # 금리·환율 등은 시가가 없음
+        row.update(open=o, high=h, low=lo, open_pct=pct(o, prev), high_pct=pct(h, prev), low_pct=pct(lo, prev))
+    return row
+
+
+def fetch_naver_daily(kind, code):
+    if kind == "index":
+        rows = http_json(f"{NAVER_WORLD}/index/{urllib.parse.quote(code)}/price?page=1&pageSize=10", retries=1)
+    else:
+        url = (f"{NAVER_FRONT}/marketIndex/prices?category={kind}"
+               f"&reutersCode={urllib.parse.quote(code)}&page=1&pageSize=10")
+        rows = (http_json(url, retries=1) or {}).get("result")
+    return row_from_daily(parse_naver_daily(rows))
+
+
 def fetch_overseas():
     symbols = [s for s, _, _ in OVERSEAS]
     q = urllib.parse.quote(",".join(symbols), safe=",")
-    spark = parse_spark(http_json(f"{YAHOO}/v7/finance/spark?symbols={q}&range=5d&interval=1d"))
+    try:
+        spark = parse_spark(http_json(f"{YAHOO}/v7/finance/spark?symbols={q}&range=5d&interval=1d"))
+    except Exception as e:
+        print(f"  야후 실패 → 네이버로 대체 ({str(e)[:60]})")
+        spark = {}
+
     items = []
     for sym, name, group in OVERSEAS:
         row = {"symbol": sym, "name": name, "group": group}
-        row.update(spark.get(sym) or {"error": "데이터 없음"})
+        if sym in spark:
+            row.update(spark[sym], source="Yahoo")
         items.append(row)
-    # 美 3대지수는 출발 방향 판단을 위해 시가도 가져옴
+
     for row in items:
-        if row["symbol"] in US_MAIN and "close" in row:
+        sym = row["symbol"]
+        # 야후에 없는 종목은 네이버로, 美 3대지수는 출발 방향 판단용 시가도 네이버에서
+        need_close = "close" not in row
+        need_open = sym in US_MAIN
+        if (need_close or need_open) and sym in NAVER_MAP:
             try:
-                o = parse_chart_open(http_json(
-                    f"{YAHOO}/v8/finance/chart/{urllib.parse.quote(row['symbol'])}?range=5d&interval=1d"))
-                if o and o["date"] == row["date"]:
-                    row["open"], row["high"], row["low"] = o["open"], o["high"], o["low"]
-                    row["open_pct"] = pct(o["open"], row["prev"])
-                    row["high_pct"] = pct(o["high"], row["prev"])
-                    row["low_pct"] = pct(o["low"], row["prev"])
+                nv = fetch_naver_daily(*NAVER_MAP[sym])
             except Exception as e:
-                print(f"  시가 조회 실패 {row['symbol']}: {e}")
+                nv = None
+                print(f"  네이버 실패 {sym}: {str(e)[:60]}")
+            if nv and need_close:
+                row.update(nv, source="네이버")
+            elif nv and nv["date"] == row.get("date") and nv.get("open"):
+                row.update({k: nv[k] for k in ("open", "high", "low")})
+                row.update(open_pct=pct(nv["open"], row["prev"]), high_pct=pct(nv["high"], row["prev"]),
+                           low_pct=pct(nv["low"], row["prev"]))
+        if need_open and "open_pct" not in row and "close" in row:
+            try:  # 네이버로 시가를 못 받았을 때만 야후 chart 호출
+                o = parse_chart_open(http_json(
+                    f"{YAHOO}/v8/finance/chart/{urllib.parse.quote(sym)}?range=5d&interval=1d", retries=0))
+                if o and o["date"] == row["date"]:
+                    row.update(open=o["open"], high=o["high"], low=o["low"], open_pct=pct(o["open"], row["prev"]),
+                               high_pct=pct(o["high"], row["prev"]), low_pct=pct(o["low"], row["prev"]))
+            except Exception as e:
+                print(f"  시가 조회 실패 {sym}: {str(e)[:60]}")
+        if "close" not in row:
+            row["error"] = "데이터 없음"
+
+    if not any("close" in r for r in items if r["symbol"] in US_MAIN):
+        raise RuntimeError("美 지수를 야후·네이버 모두에서 받지 못함")
     return {"fetched_at": datetime.now(KST).isoformat(), "items": items}
