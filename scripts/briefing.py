@@ -93,7 +93,19 @@ def overnight_draft(data):
     us = [items.get(s) for s in md.US_MAIN]
     if not all(r and r.get("close") is not None for r in us):
         return None
-    us_date = us[0]["date"]
+    # 3대지수를 '모두 마감 값이 있는 가장 최근 거래일'로 맞춤
+    # (출처마다 당일 종가 반영 시각이 달라 나스닥만 하루 늦게 오는 경우가 있음, 장중 값은 제외)
+    def closed_dates(r):
+        ds = [d for d, _ in (r.get("series") or [[r["date"], r["close"]]])]
+        return set(ds[:-1] if r.get("live") else ds)
+    common = sorted(set.intersection(*[closed_dates(r) for r in us]))
+    if not common:
+        return None
+    us_date = common[-1]
+    lagging = [r["name"] for r in us if r["date"] > us_date]
+    us = [r if r["date"] == us_date and not r.get("live") else md.row_on(r, us_date) for r in us]
+    if not all(us):
+        return None
     # 유럽은 美 거래일과 같은 날의 종가로 맞춤 (오후에 열면 유럽 장중 값이 섞이지 않도록)
     eu = [(md.row_on(items[s], us_date) if items.get(s) else None) for s in md.EU_MAIN]
 
@@ -140,6 +152,10 @@ def overnight_draft(data):
         if r.get("date") and r["date"] != us_date:
             chg += f" ({mmdd(r['date'])} 기준)"
         checks.append((r["name"], val, chg))
+
+    if lagging:
+        checks.insert(0, ("⚠ 기준일 확인", f"{mmdd(us_date)} 기준",
+                          f"{', '.join(lagging)}은(는) 더 최근 값이 있으나 다른 지수가 아직 반영되지 않아 {mmdd(us_date)}로 맞춤"))
 
     return {
         "kind": "overnight",
