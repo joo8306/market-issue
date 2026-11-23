@@ -25,6 +25,8 @@ META_PATH = ROOT / "data" / "kospi_targets_meta.json"
 
 # 기간 표기 순서 (짧은 순)
 PERIODS = ["단기", "월간", "분기", "3개월", "6개월", "12개월", "연말", "내년", "기간 미상"]
+# 이 일수가 지나면 '오래됨' (전망 기간이 짧을수록 빨리 낡음). 나머지는 92일
+STALE_DAYS = {"단기": 14, "월간": 31, "분기": 62, "3개월": 62, "6개월": 62}
 
 FOREIGN = ["Goldman", "골드만", "Morgan Stanley", "모건스탠리", "JPMorgan", "JP모건", "제이피모건",
            "Citi", "씨티", "UBS", "Nomura", "노무라", "Macquarie", "맥쿼리", "CLSA", "HSBC",
@@ -316,7 +318,7 @@ def build_payload(rows, kospi_history=None, today=None, meta=None):
         change = rec["change"]
         snapshot.append(dict(rec, change=change, age_days=age,
                              recent=age <= 31 and change in ("상향", "하향", "신규"),
-                             stale=age > 92))
+                             stale=age > STALE_DAYS.get(rec["period"], 92)))
     order = {p: i for i, p in enumerate(PERIODS)}
     snapshot.sort(key=lambda r: r["date"], reverse=True)  # 같은 기간 안에서는 최신순
     snapshot.sort(key=lambda r: (r["group"] != "국내", order.get(r["period"], 99)))
