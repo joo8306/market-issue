@@ -108,6 +108,22 @@ class PipelineTest(unittest.TestCase):
             self.assertTrue((out / "icons" / "icon-192.png").exists())
 
 
+class NewsTimeTest(unittest.TestCase):
+    def entry(self, s):
+        f = feedparser.parse(f"<rss><channel><item><title>t</title><pubDate>{s}</pubDate></item></channel></rss>")
+        return f.entries[0]
+
+    def test_korean_feed_without_timezone_is_kst(self):
+        now = datetime(2026, 11, 23, 22, 20, tzinfo=timezone.utc)  # 11/24 07:20 KST
+        kst = timedelta(hours=9)
+        for raw in ("2026-11-24 06:30:00", "Tue, 24 Nov 2026 06:30:00 +0900", "Mon, 23 Nov 2026 21:30:00 GMT",
+                    "Tue, 24 Nov 2026 06:30:00 GMT"):  # 마지막은 KST를 GMT로 잘못 표기한 경우
+            pub = build.parse_time(self.entry(raw), "KR", now)
+            self.assertEqual((pub + kst).strftime("%d %H:%M"), "24 06:30", raw)
+        # 해외 매체가 미래 시각이면 수집 시각으로
+        self.assertEqual(build.parse_time(self.entry("Tue, 24 Nov 2026 06:30:00 GMT"), "GLOBAL", now), now)
+
+
 class NotifyTest(unittest.TestCase):
     def item(self, n, urgent=False):
         return {"id": f"id{n}", "region": "GLOBAL", "category": "증시", "source": "CNBC",

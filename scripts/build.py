@@ -95,11 +95,28 @@ def item_id(title):
 
 
 # ===== 수집 =====
-def parse_time(entry):
-    for key in ("published_parsed", "updated_parsed"):
-        t = entry.get(key)
-        if t:
-            return datetime(*t[:6], tzinfo=timezone.utc)
+TZ_RE = re.compile(r"(?:[+-]\d{2}:?\d{2}|\b(?:GMT|UTC|UT|Z|EST|EDT|CST|CDT|PST|PDT|KST)\b|\dZ)\s*$", re.IGNORECASE)
+
+
+def parse_time(entry, region="GLOBAL", now=None):
+    """기사 시각(UTC). 한국 매체가 시간대 없이 '2026-11-24 06:30:00'처럼 주면 KST로 봄
+    (feedparser 는 시간대가 없으면 UTC로 읽어서 9시간 미래로 밀림)"""
+    for key in ("published", "updated"):
+        t = entry.get(key + "_parsed")
+        if not t:
+            continue
+        pub = datetime(*t[:6], tzinfo=timezone.utc)
+        raw = (entry.get(key) or "").strip()
+        if region == "KR" and raw and not TZ_RE.search(raw):
+            pub -= timedelta(hours=9)
+        # 그래도 미래면(매체가 KST를 UTC로 잘못 표기) 한국 매체는 9시간 당기고, 아니면 수집 시각으로
+        now = now or datetime.now(timezone.utc)
+        if pub > now + timedelta(minutes=10):
+            if region == "KR" and pub - timedelta(hours=9) <= now + timedelta(minutes=10):
+                pub -= timedelta(hours=9)
+            else:
+                pub = now
+        return pub
     return None
 
 
@@ -117,7 +134,7 @@ def collect_source(source, url, region, opts, cutoff, now):
         feed = fetch_feed(url)
         entries = feed.entries[: opts.get("limit", config.DEFAULT_FEED_LIMIT)]
         for entry in entries:
-            pub = parse_time(entry)
+            pub = parse_time(entry, region, now)
             if pub is None:
                 pub = now  # 날짜 없는 기사는 수집 시각으로
             if pub < cutoff:

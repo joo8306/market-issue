@@ -27,10 +27,15 @@ def kr_refresh_sec(now_kst):
     return 3 * 3600
 
 
+def overseas_refresh_sec(now_kst):
+    """美 장 마감 직후(05~10시)는 매 실행마다, 그 외에는 15분"""
+    return 4 * 60 if 5 <= now_kst.hour < 10 else 15 * 60
+
+
 SOURCES = {
     # 이름: (수집 함수, 갱신 주기(초) 또는 함수)
     "market_kr": (marketdata.fetch_kr_market, kr_refresh_sec),
-    "market_overseas": (marketdata.fetch_overseas, 20 * 60),
+    "market_overseas": (marketdata.fetch_overseas, overseas_refresh_sec),
     "kospi_history": (lambda: marketdata.fetch_kospi_history(pages=4), 6 * 3600),
     "wfe": (wfe.fetch_wfe, 24 * 3600),
 }
