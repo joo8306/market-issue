@@ -102,8 +102,8 @@ GitHub의 예약 실행(cron)은 **5분으로 설정해도 실제로는 10~30분
 끄거나 하나만 받으려면 Variables에 `BRIEFINGS`를 `off` / `overnight` / `closing`으로 지정합니다.
 
 ### 증권사 전망 기록하기
-1. Claude에서 `/kospi-targets` 실행 → 결과 표를 `targets.md`로 저장
-2. `python scripts/targets.py import targets.md` → `data/kospi_targets.csv`에 추가 (이미 있는 행은 건너뜀)
+1. Claude에서 `/kospi-targets` 실행 → 결과 표를 `targets.md`로 저장 (스킬 최신본: `skills/kospi-targets/SKILL.md` — 기준·직전 전망·근거 요약 칸 포함)
+2. `python scripts/targets.py import targets.md` → `data/kospi_targets.csv`에 추가 (이미 있는 행은 건너뜀, `직전 전망` 칸의 `9,000 (10.26)`은 이력 한 줄로도 추가)
 3. 커밋·푸시하면 전망 화면에 반영
 
 GitHub 웹에서 CSV를 직접 고쳐도 됩니다. 열은 `기록일,증권사,구분,기간,목표,하단,상단,내용,제시일,날짜구분,변경,근거,출처,링크,기준`이고, 기간은 `단기/월간/분기/3개월/6개월/12개월/연말/내년/기간 미상` 중 하나로 씁니다.

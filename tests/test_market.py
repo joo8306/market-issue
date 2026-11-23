@@ -250,6 +250,25 @@ class TargetsTest(unittest.TestCase):
         self.assertEqual((c["구분"], c["목표"], c["하단"], c["날짜구분"]), ("외국계", "", "7000", "보도일"))
         self.assertEqual(c["링크"], "https://example.com/c")
 
+    def test_parse_new_skill_columns(self):
+        md = """기준일: 2026-11-23 (월) 코스피 목표 지수 · 증권사 1곳
+
+외국계
+| 증권사 | 기간 | 기준 | 목표·밴드 | 제시일 | 변경 | 직전 전망 | 전망 근거 요약 | 출처 |
+|---|---|---|---|---|---|---|---|---|
+| ★Goldman Sachs | 12개월 | 향후 12개월 목표 | 7,500 | 11.17 | ↓ 하향 | 9,000 (10.26) | 이익 하향 · PER 8배 | [CNBC 11.17](https://x/a) |
+"""
+        rows = targets.parse_markdown(md)
+        self.assertEqual(len(rows), 2)  # 최신 + 직전 전망 이력
+        cur, prev = rows
+        self.assertEqual((cur["기준"], cur["근거"], cur["목표"]), ("향후 12개월 목표", "이익 하향 · PER 8배", "7500"))
+        self.assertEqual((prev["목표"], prev["제시일"], prev["기간"]), ("9000", "2026-10-26", "12개월"))
+        p = targets.build_payload(rows, [], date(2026, 11, 23))
+        g = p["brokers"][0]
+        self.assertEqual([i["change"] for i in g["items"]], ["하향", "신규"])  # 최신은 직전 9,000 대비 하향
+        self.assertIsNone(targets.parse_prev("-", date(2026, 11, 23)))
+        self.assertIsNone(targets.parse_prev("9,000", date(2026, 11, 23)))  # 날짜 없으면 이력으로 안 넣음
+
     def test_levels(self):
         self.assertEqual(targets.parse_levels("선행 PBR 1배인 5,330선"), (5330, None, None))
         self.assertEqual(targets.parse_levels("12개월 목표 8,000"), (8000, None, None))

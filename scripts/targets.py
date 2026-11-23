@@ -136,11 +136,14 @@ def parse_markdown(md, today=None):
             continue  # 숫자가 없는 행은 건너뜀
         given, kind = parse_given_date(rec.get("제시일", ""), base)
         src, link = parse_source(rec.get("출처", ""))
-        rows.append({
+        reason = next((v for k, v in rec.items() if "근거" in k), "")
+        period = normalize_period(rec.get("기간", ""))
+        basis = rec.get("기준") or rec.get("기간", "")
+        row = {
             "기록일": base.isoformat(),
             "증권사": broker,
             "구분": broker_group(broker, group),
-            "기간": normalize_period(rec.get("기간", "")),
+            "기간": period,
             "목표": "" if target is None else f"{target:g}",
             "하단": "" if low is None else f"{low:g}",
             "상단": "" if high is None else f"{high:g}",
@@ -148,12 +151,39 @@ def parse_markdown(md, today=None):
             "제시일": given,
             "날짜구분": kind,
             "변경": rec.get("변경", ""),
-            "근거": rec.get("핵심 근거", rec.get("근거", "")),
+            "근거": reason,
             "출처": src,
             "링크": link,
-            "기준": rec.get("기간", ""),
-        })
+            "기준": basis,
+        }
+        rows.append(row)
+        prev = parse_prev(rec.get("직전 전망", ""), base)
+        if prev:  # 직전 전망도 이력 한 줄로 남김 (같은 기간·기준)
+            p_target, p_low, p_high, p_text, p_date = prev
+            rows.append(dict(row, **{
+                "목표": "" if p_target is None else f"{p_target:g}",
+                "하단": "" if p_low is None else f"{p_low:g}",
+                "상단": "" if p_high is None else f"{p_high:g}",
+                "내용": p_text, "제시일": p_date, "날짜구분": "보도일", "변경": "",
+                "근거": "", "출처": f"직전 전망 ({src})" if src else "직전 전망", "링크": link,
+            }))
     return rows
+
+
+def parse_prev(text, base):
+    """'9,000 (10.26)' / '5,200~6,700 (2026.11.09)' → (목표, 하단, 상단, 내용, 날짜). 날짜가 없으면 None"""
+    t = (text or "").strip()
+    if not t or t in ("-", "신규", "없음"):
+        return None
+    m = re.search(r"\(([^)]*\d{1,2}[./]\d{1,2}[^)]*)\)\s*$", t)
+    if not m:
+        return None
+    d, _ = parse_given_date(m.group(1), base)
+    value_text = t[:m.start()].strip()
+    target, low, high = parse_levels(value_text)
+    if not d or (target is None and low is None):
+        return None
+    return target, low, high, value_text, d
 
 
 # ===== CSV =====
