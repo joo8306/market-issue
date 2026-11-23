@@ -228,6 +228,9 @@ def row_on(row, date):
     for i, (d, c) in enumerate(series):
         if d == date and i > 0:
             out = dict(row)
+            if date != row.get("date"):  # 시가·고가·저가·장중 여부는 마지막 날 것이라 버림
+                for k in ("open", "high", "low", "open_pct", "high_pct", "low_pct", "live"):
+                    out.pop(k, None)
             out.update(date=d, close=c, prev=series[i - 1][1], prev_date=series[i - 1][0],
                        pct=pct(c, series[i - 1][1]))
             return out
@@ -276,9 +279,35 @@ def row_from_daily(pts):
     return row
 
 
+def merge_latest_quote(pts, basic):
+    """일별 시세에 아직 안 들어간 최신 거래일을 현재가(basic)로 채움.
+    네이버 일별 시세는 나스닥 계열 지수(나스닥·SOX)의 당일 행이 몇 시간씩 늦게 붙어서,
+    다우·S&P는 월요일인데 나스닥만 금요일로 남는 일이 생김 → basic 의 종가·시가·고가·저가로 보충"""
+    if not basic:
+        return pts, None
+    d = (basic.get("localTradedAt") or "")[:10]
+    close = num(basic.get("closePriceRaw") or basic.get("closePrice"))
+    if not d or close is None:
+        return pts, None
+    status = basic.get("marketStatus")
+    row = (d, close, num(basic.get("openPriceRaw")), num(basic.get("highPriceRaw")), num(basic.get("lowPriceRaw")))
+    pts = [p for p in pts if p[0] != d] + [row] if (not pts or d >= pts[-1][0]) else pts
+    return sorted(pts), status
+
+
 def fetch_naver_daily(kind, code):
     if kind == "index":
-        rows = http_json(f"{NAVER_WORLD}/index/{urllib.parse.quote(code)}/price?page=1&pageSize=10", retries=1)
+        q = urllib.parse.quote(code)
+        rows = http_json(f"{NAVER_WORLD}/index/{q}/price?page=1&pageSize=10", retries=1)
+        try:
+            basic = http_json(f"{NAVER_WORLD}/index/{q}/basic", retries=1)
+        except Exception:
+            basic = None
+        pts, status = merge_latest_quote(parse_naver_daily(rows), basic)
+        row = row_from_daily(pts)
+        if row and status and status != "CLOSE":
+            row["live"] = True  # 장중 값 (해외시황 초안은 직전 마감일 기준으로 씀)
+        return row
     else:
         url = (f"{NAVER_FRONT}/marketIndex/prices?category={kind}"
                f"&reutersCode={urllib.parse.quote(code)}&page=1&pageSize=10")

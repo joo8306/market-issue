@@ -100,6 +100,36 @@ class NaverWorldTest(unittest.TestCase):
         self.assertEqual(ewy["error"], "데이터 없음")
 
 
+class NaverLagTest(unittest.TestCase):
+    def test_latest_quote_fills_lagging_daily_history(self):
+        rows = fixture_json("naver_world_ixic_price_lagging.json")
+        basic = fixture_json("naver_world_ixic_basic.json")
+        pts = md.parse_naver_daily(rows)
+        self.assertEqual(pts[-1][0], "2026-11-20")  # 일별 시세에는 월요일 행이 아직 없음
+        merged, status = md.merge_latest_quote(pts, basic)
+        row = md.row_from_daily(merged)
+        self.assertEqual((row["date"], row["close"], row["prev"]), ("2026-11-23", 24089.56, 22617.73))
+        self.assertEqual(status, "CLOSE")
+        self.assertIsNotNone(row["open_pct"])
+
+    def test_draft_aligns_us_indices_to_common_date(self):
+        def r(sym, series, live=False):
+            row = {"symbol": sym, "name": sym, "group": "us", "series": series, "date": series[-1][0],
+                   "close": series[-1][1], "prev": series[-2][1], "pct": (series[-1][1] / series[-2][1] - 1) * 100,
+                   "open_pct": 0.5}
+            if live:
+                row["live"] = True
+            return row
+        a = [["2026-11-19", 100], ["2026-11-20", 98], ["2026-11-23", 101]]
+        lag = [["2026-11-19", 100], ["2026-11-20", 95]]
+        d = briefing.overnight_draft({"items": [r("^DJI", a), r("^IXIC", lag), r("^GSPC", a)]})
+        self.assertEqual(d["date"], "2026-11-20")  # 나스닥이 늦으면 셋 다 금요일로 맞춤
+        self.assertIn("3대지수 모두 하락 마감", d["copy"])
+        self.assertTrue(d["checks"][0][0].startswith("⚠"))
+        d = briefing.overnight_draft({"items": [r("^DJI", a, live=True), r("^IXIC", a), r("^GSPC", a)]})
+        self.assertEqual(d["date"], "2026-11-20")  # 장중 값은 마감으로 쓰지 않음
+
+
 class OvernightDraftTest(unittest.TestCase):
     def test_from_fixture(self):
         sp = md.parse_spark(fixture_json("yahoo_spark.json"))
