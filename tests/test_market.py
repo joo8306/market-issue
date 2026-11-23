@@ -290,6 +290,21 @@ class TargetsTest(unittest.TestCase):
         self.assertEqual(next(r for r in p["snapshot"] if r["broker"] == "A")["basis"], "향후 12개월 목표")
         self.assertEqual(p["meta"]["기준일"], "2026-11-23")
 
+    def test_broker_history(self):
+        def r(b, per, t, d):
+            return {**{k: "" for k in targets.FIELDS}, "증권사": b, "구분": "외국계", "기간": per, "목표": t, "제시일": d}
+        rows = [r("G", "12개월", "12000", "2026-06-03"), r("G", "12개월", "9000", "2026-10-26"),
+                r("G", "12개월", "7500", "2026-11-17"), r("N", "기간 미상", "8000", "2026-02-26"),
+                r("N", "기간 미상", "10000", "2026-11-05")]
+        p = targets.build_payload(rows, [], date(2026, 11, 23))
+        g = next(b for b in p["brokers"] if b["broker"] == "G")
+        self.assertEqual([i["level"] for i in g["items"]], [7500, 9000, 12000])  # 최신순
+        self.assertEqual([i["change"] for i in g["items"]], ["하향", "하향", "신규"])
+        self.assertEqual(g["items"][0]["prev"]["level"], 9000)
+        self.assertEqual((g["ups"], g["downs"]), (0, 2))
+        n = next(b for b in p["brokers"] if b["broker"] == "N")
+        self.assertEqual(n["items"][0]["change"], "신규")  # 기간을 모르는 전망끼리는 비교하지 않음
+
     def test_committed_data_loads(self):
         rows = targets.load_rows()
         self.assertTrue(all(r["기준"] for r in rows), "모든 행에 기준(무엇을 뜻하는 수치인지)이 있어야 함")

@@ -207,6 +207,42 @@ def load_meta(path=META_PATH):
         return {}
 
 
+def change_of(rec):
+    p = rec.get("prev")
+    if p is None:
+        note = rec.get("change_note") or ""
+        return ("상향" if "↑" in note or "상향" in note else
+                "하향" if "↓" in note or "하향" in note else
+                "유지" if "→" in note or "유지" in note else "신규")
+    if rec["level"] > p["level"]:
+        return "상향"
+    if rec["level"] < p["level"]:
+        return "하향"
+    return "유지"
+
+
+def broker_timelines(recs, today):
+    """증권사별 전망 이력 (최신순). 국내 먼저, 최근 전망이 있는 증권사 먼저"""
+    by = {}
+    for rec in recs:
+        by.setdefault(rec["broker"], []).append(rec)
+    out = []
+    for broker, items in by.items():
+        items = sorted(items, key=lambda x: x["date"], reverse=True)
+        ups = sum(1 for i in items if i["change"] == "상향")
+        downs = sum(1 for i in items if i["change"] == "하향")
+        out.append({
+            "broker": broker, "group": items[0]["group"], "latest_date": items[0]["date"],
+            "count": len(items), "ups": ups, "downs": downs,
+            "items": [{k: i[k] for k in ("date", "date_kind", "period", "basis", "text", "level", "target", "low",
+                                         "high", "change", "change_note", "prev", "reason", "source", "link")}
+                      for i in items],
+        })
+    out.sort(key=lambda b: b["latest_date"], reverse=True)
+    out.sort(key=lambda b: b["group"] != "국내")
+    return out
+
+
 def build_payload(rows, kospi_history=None, today=None, meta=None):
     today = today or date.today()
     recs = []
@@ -227,34 +263,27 @@ def build_payload(rows, kospi_history=None, today=None, meta=None):
             continue
         recs.append(rec)
 
-    # 증권사·기간별 최신값 + 직전값
-    latest = {}
+    # 기록마다 같은 증권사·같은 기간의 직전 전망과 비교해 상향/하향 판정
+    # (기간이 다르면 기준이 달라 비교하지 않음 → 직전값이 없으면 기록된 '변경' 메모를 사용)
+    last = {}
     for rec in sorted(recs, key=lambda x: x["date"]):
         key = (rec["broker"], rec["period"])
-        prev = latest.get(key)
+        prev = last.get(key) if rec["period"] != "기간 미상" else None  # 기간을 모르면 비교할 수 없음
         if prev and prev["date"] == rec["date"]:
-            latest[key] = dict(rec, prev=prev.get("prev"))
-            continue
-        latest[key] = dict(rec, prev=({"level": prev["level"], "date": prev["date"], "text": prev["text"]}
-                                      if prev else None))
+            prev = prev.get("prev_rec")
+        rec["prev_rec"] = prev
+        rec["prev"] = ({"level": prev["level"], "date": prev["date"], "text": prev["text"]} if prev else None)
+        rec["change"] = change_of(rec)
+        last[key] = rec
+    for rec in recs:
+        rec.pop("prev_rec", None)
 
     snapshot = []
-    for rec in latest.values():
+    for rec in last.values():
         age = (today - datetime.strptime(rec["date"], "%Y-%m-%d").date()).days
         if age > 183:  # 6개월 넘은 전망은 제외
             continue
-        p = rec["prev"]
-        if p is None:
-            note = rec.get("change_note") or ""
-            change = ("상향" if "↑" in note or "상향" in note else
-                      "하향" if "↓" in note or "하향" in note else
-                      "유지" if "→" in note or "유지" in note else "신규")
-        elif rec["level"] > p["level"]:
-            change = "상향"
-        elif rec["level"] < p["level"]:
-            change = "하향"
-        else:
-            change = "유지"
+        change = rec["change"]
         snapshot.append(dict(rec, change=change, age_days=age,
                              recent=age <= 31 and change in ("상향", "하향", "신규"),
                              stale=age > 92))
@@ -278,6 +307,7 @@ def build_payload(rows, kospi_history=None, today=None, meta=None):
         "snapshot": snapshot,
         "ranges": ranges,
         "history": sorted(recs, key=lambda x: x["date"], reverse=True),
+        "brokers": broker_timelines(recs, today),
         "kospi": kospi_history or [],
         "meta": meta or {},
     }
