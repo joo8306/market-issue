@@ -216,6 +216,14 @@ details > summary { cursor: pointer; color: var(--text-dim); font-size: 13px; ma
 .tbl .note { color: var(--text-dim); font-size: 12px; min-width: 140px; white-space: normal; }
 .tbl a { color: var(--global); text-decoration: none; }
 .star { color: var(--accent); margin-right: 3px; }
+.tbl td.period { white-space: normal; min-width: 120px; }
+.basis { font-size: 11px; color: var(--text-faint); margin-top: 2px; line-height: 1.4; }
+.notes ol { padding-left: 22px; font-size: 13px; color: var(--text-dim); line-height: 1.7; }
+.notes li { margin-bottom: 6px; }
+.notes b { color: var(--text); font-weight: 600; }
+sup { font-size: 10px; color: var(--accent); margin-left: 1px; }
+.tile-note { font-size: 12px; margin-top: 12px; }
+.small { font-size: 12px; line-height: 1.7; }
 .chg-상향 { color: var(--up); }
 .chg-하향 { color: var(--down); }
 .guide { text-align: left; line-height: 1.8; font-family: inherit; font-size: 13px; color: var(--text-dim); }

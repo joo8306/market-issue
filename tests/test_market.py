@@ -276,6 +276,26 @@ class TargetsTest(unittest.TestCase):
             self.assertEqual({r["period"] for r in p["ranges"]}, {"단기", "12개월", "내년"})
 
 
+    def test_stale_excluded_from_ranges_and_basis_kept(self):
+        rows = [
+            {**{k: "" for k in targets.FIELDS}, "증권사": "A", "구분": "외국계", "기간": "12개월", "목표": "7500",
+             "제시일": "2026-11-17", "기준": "향후 12개월 목표"},
+            {**{k: "" for k in targets.FIELDS}, "증권사": "B", "구분": "외국계", "기간": "12개월", "목표": "12500",
+             "제시일": "2026-07-21"},
+        ]
+        p = targets.build_payload(rows, [], date(2026, 11, 23), {"기준일": "2026-11-23"})
+        r12 = next(r for r in p["ranges"] if r["period"] == "12개월")
+        self.assertEqual((r12["count"], r12["median"]), (1, 7500))  # 3개월 넘은 B 제외
+        self.assertTrue(next(r for r in p["snapshot"] if r["broker"] == "B")["stale"])
+        self.assertEqual(next(r for r in p["snapshot"] if r["broker"] == "A")["basis"], "향후 12개월 목표")
+        self.assertEqual(p["meta"]["기준일"], "2026-11-23")
+
+    def test_committed_data_loads(self):
+        rows = targets.load_rows()
+        self.assertTrue(all(r["기준"] for r in rows), "모든 행에 기준(무엇을 뜻하는 수치인지)이 있어야 함")
+        self.assertTrue(all(r["제시일"] and r["링크"] for r in rows))
+
+
 class ExtrasCacheTest(unittest.TestCase):
     def test_failure_falls_back_to_cache(self):
         with tempfile.TemporaryDirectory() as tmp:

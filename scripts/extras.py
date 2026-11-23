@@ -61,7 +61,8 @@ def cached(name, fetch, max_age, state_dir, now_ts):
         return None, info
 
 
-def build_extras(out_dir, state_dir=STATE_DIR, now=None, sources=SOURCES, targets_csv=targets.CSV_PATH):
+def build_extras(out_dir, state_dir=STATE_DIR, now=None, sources=SOURCES, targets_csv=targets.CSV_PATH,
+                 targets_meta=targets.META_PATH):
     now = now or datetime.now(marketdata.KST)
     now_ts = int(now.timestamp())
     got, status = {}, {}
@@ -84,7 +85,8 @@ def build_extras(out_dir, state_dir=STATE_DIR, now=None, sources=SOURCES, target
     _write(out_dir / "market.json", market)
 
     # 증권사 전망
-    tp = targets.build_payload(targets.load_rows(targets_csv), got.get("kospi_history"), now.date())
+    tp = targets.build_payload(targets.load_rows(targets_csv), got.get("kospi_history"), now.date(),
+                               targets.load_meta(targets_meta))
     tp["generated_ts"] = now_ts
     tp["status"] = status.get("kospi_history")
     _write(out_dir / "targets.json", tp)

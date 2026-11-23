@@ -8,7 +8,7 @@
 """
 
 import csv
-import io
+import json
 import re
 import sys
 from datetime import date, datetime
@@ -18,7 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 CSV_PATH = ROOT / "data" / "kospi_targets.csv"
 
 FIELDS = ["기록일", "증권사", "구분", "기간", "목표", "하단", "상단", "내용",
-          "제시일", "날짜구분", "변경", "근거", "출처", "링크"]
+          "제시일", "날짜구분", "변경", "근거", "출처", "링크", "기준"]
+# 기준: 그 숫자가 무엇을 뜻하는지 (예: "2027년 연간 예상 밴드", "12개월 목표 · 시나리오 범위")
+#       국내 증권사는 다음 해 연간 밴드, 외국계는 발표일부터 12개월 목표가 많아 같은 '목표'라도 뜻이 다름
+META_PATH = ROOT / "data" / "kospi_targets_meta.json"
 
 # 기간 표기 순서 (짧은 순)
 PERIODS = ["단기", "월간", "분기", "3개월", "6개월", "12개월", "연말", "내년", "기간 미상"]
@@ -148,6 +151,7 @@ def parse_markdown(md, today=None):
             "근거": rec.get("핵심 근거", rec.get("근거", "")),
             "출처": src,
             "링크": link,
+            "기준": rec.get("기간", ""),
         })
     return rows
 
@@ -195,7 +199,15 @@ def level(r):
     return r["low"] or r["high"]
 
 
-def build_payload(rows, kospi_history=None, today=None):
+def load_meta(path=META_PATH):
+    """수집 메모 (기준일, 수집 방법, 확인 필요·찾지 못한 증권사)"""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def build_payload(rows, kospi_history=None, today=None, meta=None):
     today = today or date.today()
     recs = []
     for r in rows:
@@ -208,6 +220,7 @@ def build_payload(rows, kospi_history=None, today=None):
             "text": r["내용"], "date": r["제시일"], "date_kind": r["날짜구분"],
             "reason": r["근거"], "source": r["출처"], "link": r["링크"],
             "change_note": r["변경"],
+            "basis": r.get("기준", ""),
         }
         rec["level"] = level(rec)
         if rec["level"] is None:
@@ -251,7 +264,8 @@ def build_payload(rows, kospi_history=None, today=None):
 
     ranges = []
     for p in PERIODS:
-        vals = sorted(r["level"] for r in snapshot if r["period"] == p)
+        # 3개월 넘은 전망은 중간값에서 제외 (표에는 '오래됨'으로 남김)
+        vals = sorted(r["level"] for r in snapshot if r["period"] == p and not r["stale"])
         if not vals:
             continue
         mid = len(vals) // 2
@@ -265,6 +279,7 @@ def build_payload(rows, kospi_history=None, today=None):
         "ranges": ranges,
         "history": sorted(recs, key=lambda x: x["date"], reverse=True),
         "kospi": kospi_history or [],
+        "meta": meta or {},
     }
 
 
