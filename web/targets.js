@@ -113,7 +113,7 @@
         같은 '내년 목표'라도 산출 방식(연간 목표, 12개월 선행 PER 등)이 달라 기준 칸에 함께 적었습니다.</li>
       <li value="4"><b>대표값</b> = 목표치, 목표 없이 밴드만 있으면 밴드 중간값입니다. 외국계는 밴드 대신 약세~강세 시나리오 범위를 적고, 대표값은 기본 시나리오입니다.</li>
       <li value="5"><b>제시일</b>: '보고서' = 보고서 발표일, '보도' = 보고서 날짜를 확인하지 못해 가장 이른 기사 날짜를 쓴 경우입니다.
-        3개월 넘은 전망은 (오래됨)으로 표시하고 기간별 중간값에서 뺍니다. 6개월 넘으면 표에서 뺍니다. ★ = 최근 1개월 안에 새로 나오거나 바뀐 전망.</li>
+        오래된 전망은 (오래됨)으로 표시하고 표 기본 화면과 기간별 중간값에서 뺍니다. 기준은 전망 기간에 따라 단기 2주, 월간 1개월, 분기·3개월·6개월 2개월, 그 밖에는 3개월입니다. 6개월 넘으면 최신 목록에서 빼고 이력에만 남깁니다. ★ = 최근 1개월 안에 새로 나오거나 바뀐 전망.</li>
     </ol></section>`;
   }
 
@@ -158,7 +158,7 @@
     const meta = data.meta || {};
     $('main').innerHTML = `
       ${meta['기준일'] ? `<div class="notice"><strong>기준일 ${esc(meta['기준일'])}</strong>${esc(meta['수집방법'] || '')}</div>` : ''}
-      <div class="tile-note muted">기간별 중간값 · 3개월 넘은 전망 제외<sup>⁵</sup> · 국내 '내년'과 외국계 '12개월'은 기준이 다릅니다<sup>¹²³</sup></div>
+      <div class="tile-note muted">기간별 중간값 · 오래된 전망 제외<sup>⁵</sup> · 국내 '내년'과 외국계 '12개월'은 기준이 다릅니다<sup>¹²³</sup></div>
       ${tiles(data.ranges || [], last && last[1])}
       <section class="panel">
         <h2>코스피와 증권사 전망 <span class="muted">12개월·연말·내년 전망을 제시일에 표시 · 기준이 서로 다름³</span></h2>
@@ -169,7 +169,7 @@
         <div class="chips" id="period-chips">${periods.map((p, i) => `<button type="button" class="chip${i === 0 ? ' active' : ''}" data-p="${esc(p)}">${esc(p)}</button>`).join('')}</div>
         <div id="chart-strip"></div>
       </section>
-      ${oldCount ? `<label class="toggle"><input type="checkbox" id="show-old"${showOld ? ' checked' : ''}> 3개월 넘은 전망도 표에 보기 (${oldCount}건 · 지난 하반기 전망 등)</label>` : ''}
+      ${oldCount ? `<label class="toggle"><input type="checkbox" id="show-old"${showOld ? ' checked' : ''}> 오래된 전망도 표에 보기 (${oldCount}건 · 지난 하반기 전망 등)</label>` : ''}
       <section class="panel"><h2>국내 증권사 <sup>¹</sup> <span class="muted">주로 다음 해 연간 밴드·목표</span></h2>${table(shown.filter((r) => r.group === '국내')) || '<div class="empty">없음</div>'}</section>
       <section class="panel"><h2>외국계 <sup>²</sup> <span class="muted">주로 발표일부터 12개월 목표 + 시나리오</span></h2>${table(shown.filter((r) => r.group !== '국내')) || '<div class="empty">3개월 안에 나온 전망 없음 · 위 체크박스로 이전 전망 보기</div>'}</section>
       ${brokersHtml(data.brokers)}
