@@ -291,6 +291,14 @@ def main():
     }
     build_site(payload)
 
+    # 시황 · 증권사 전망 · WFE 통계 (실패해도 뉴스 대시보드 배포는 계속)
+    print("\n추가 데이터")
+    try:
+        import extras
+        extras.build_extras(OUT_DIR)
+    except Exception as e:
+        print(f"  추가 데이터 빌드 실패: {e}")
+
     ok = sum(1 for h in health if h["ok"])
     kr = sum(1 for i in items if i["region"] == "KR")
     print(f"\n총 HOT 이슈 {len(items)}건 (한국 {kr} / 글로벌 {len(items) - kr}), "

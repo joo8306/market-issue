@@ -1,0 +1,265 @@
+"""
+시세 데이터 수집 (마감시황 · 해외시장)
+- 국내: 네이버 증권 모바일 API (KRX 정보데이터시스템은 로그인이 필요해 사용하지 않음)
+- 해외: 야후 파이낸스 (spark = 여러 종목 종가 한 번에, chart = 시가 확인용)
+수집 함수(fetch_*)와 파싱 함수(parse_*)를 나눠서 파싱은 오프라인 테스트가 가능하게 함
+"""
+
+import json
+import time
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+NAVER = "https://m.stock.naver.com/api"
+YAHOO = "https://query1.finance.yahoo.com"
+
+# 해외시장 브리핑 대상 (야후 심볼 → 표시 이름, 그룹)
+OVERSEAS = [
+    ("^DJI", "Dow", "us"),
+    ("^IXIC", "NASDAQ", "us"),
+    ("^GSPC", "S&P500", "us"),
+    ("^SOX", "필라델피아 반도체", "us_extra"),
+    ("^VIX", "VIX", "us_extra"),
+    ("^FTSE", "英 FTSE100", "eu"),
+    ("^FCHI", "佛 CAC40", "eu"),
+    ("^GDAXI", "獨 DAX40", "eu"),
+    ("^N225", "日 닛케이225", "asia"),
+    ("000001.SS", "中 상해종합", "asia"),
+    ("EWY", "MSCI 한국 ETF(EWY)", "kr_link"),
+    ("NQ=F", "나스닥100 선물", "kr_link"),
+    ("^TNX", "美 10년물 금리", "macro"),
+    ("DX-Y.NYB", "달러인덱스", "macro"),
+    ("KRW=X", "달러/원", "macro"),
+    ("CL=F", "WTI", "macro"),
+    ("GC=F", "금", "macro"),
+]
+US_MAIN = ["^DJI", "^IXIC", "^GSPC"]
+EU_MAIN = ["^FTSE", "^FCHI", "^GDAXI"]
+
+
+# ===== 공통 =====
+def http_json(url, timeout=15, retries=2):
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read())
+        except Exception as e:  # 네트워크 오류·429 등은 잠깐 쉬고 재시도
+            last = e
+            if attempt < retries:
+                time.sleep(1.5 * (attempt + 1))
+    raise last
+
+
+def num(s):
+    """'4,708.54' / '-3,708' / '+1,799' / '15,321,574백만' → float. 값이 없으면 None"""
+    if s is None:
+        return None
+    if isinstance(s, (int, float)):
+        return float(s)
+    t = "".join(ch for ch in str(s) if ch.isdigit() or ch in ".-")
+    if t in ("", "-", ".", "-."):
+        return None
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def pct(a, b):
+    if a is None or not b:
+        return None
+    return (a / b - 1) * 100
+
+
+# ===== 국내 (네이버) =====
+def parse_kr_index(basic, integration):
+    """지수 basic + integration 응답 → 마감시황에 필요한 값"""
+    info = {x.get("code"): x.get("value") for x in integration.get("totalInfos", [])}
+    close = num(basic.get("closePrice"))
+    prev = num(info.get("lastClosePrice"))
+    if prev is None and close is not None:
+        prev = close - (num(basic.get("compareToPreviousClosePrice")) or 0)
+    deal = integration.get("dealTrendInfo") or {}
+    prog = integration.get("programTrendInfo") or {}
+    updown = integration.get("upDownStockInfo") or {}
+    value_mil = num(info.get("accumulatedTradingValue"))  # 백만원
+    traded_at = basic.get("localTradedAt") or ""
+    return {
+        "name": basic.get("stockName") or basic.get("itemCode"),
+        "code": basic.get("itemCode"),
+        "date": traded_at[:10],
+        "status": basic.get("marketStatus"),           # OPEN / CLOSE
+        "close": close,
+        "prev": prev,
+        "change": close - prev if close is not None and prev is not None else None,
+        "pct": num(basic.get("fluctuationsRatio")),
+        "open": num(info.get("openPrice")),
+        "high": num(info.get("highPrice")),
+        "low": num(info.get("lowPrice")),
+        "open_pct": pct(num(info.get("openPrice")), prev),
+        "high_pct": pct(num(info.get("highPrice")), prev),
+        "low_pct": pct(num(info.get("lowPrice")), prev),
+        "value_eok": round(value_mil / 100) if value_mil is not None else None,  # 억원
+        "investors": {                                   # 순매수, 억원
+            "bizdate": deal.get("bizdate"),
+            "개인": num(deal.get("personalValue")),
+            "외국인": num(deal.get("foreignValue")),
+            "기관": num(deal.get("institutionalValue")),
+        },
+        "program": {                                     # 프로그램 순매수, 억원
+            "차익": num(prog.get("indexDifferenceReal")),
+            "비차익": num(prog.get("indexBiDifferenceReal")),
+            "전체": num(prog.get("indexTotalReal")),
+        },
+        "breadth": {
+            "상한": num(updown.get("upperCount")),
+            "상승": num(updown.get("riseCount")),
+            "보합": num(updown.get("steadyCount")),
+            "하락": num(updown.get("fallCount")),
+            "하한": num(updown.get("lowerCount")),
+        },
+    }
+
+
+def parse_stock_list(payload, limit=10):
+    out = []
+    for s in (payload.get("stocks") or [])[:limit]:
+        out.append({
+            "code": s.get("itemCode"),
+            "name": s.get("stockName"),
+            "close": num(s.get("closePrice")),
+            "pct": num(s.get("fluctuationsRatio")),
+            "value_eok": round((num(s.get("accumulatedTradingValue")) or 0) / 100),  # 백만원 → 억원
+            "mcap": s.get("marketValueHangeul"),
+        })
+    return out
+
+
+def fetch_kr_market():
+    out = {"fetched_at": datetime.now(KST).isoformat(), "indices": {}, "top_mcap": {}}
+    for code in ("KOSPI", "KOSDAQ"):
+        basic = http_json(f"{NAVER}/index/{code}/basic")
+        integ = http_json(f"{NAVER}/index/{code}/integration")
+        out["indices"][code] = parse_kr_index(basic, integ)
+        try:
+            mv = http_json(f"{NAVER}/stocks/marketValue/{code}?page=1&pageSize=10")
+            out["top_mcap"][code] = parse_stock_list(mv, 10)
+        except Exception as e:
+            print(f"  시총 상위 실패 {code}: {e}")
+            out["top_mcap"][code] = []
+    return out
+
+
+def parse_index_history(rows):
+    """네이버 지수 일별 시세(/index/KOSPI/price) → [(YYYY-MM-DD, 종가)] 오래된 순"""
+    pts = [(r.get("localTradedAt", "")[:10], num(r.get("closePrice"))) for r in rows]
+    return sorted((d, c) for d, c in pts if d and c is not None)
+
+
+def fetch_kospi_history(pages=4, page_size=60):
+    rows = []
+    for p in range(1, pages + 1):
+        batch = http_json(f"{NAVER}/index/KOSPI/price?pageSize={page_size}&page={p}")
+        if not batch:
+            break
+        rows.extend(batch)
+    return parse_index_history(rows)
+
+
+# ===== 해외 (야후) =====
+def _clean_closes(timestamps, closes, tz_offset):
+    pts = []
+    for ts, c in zip(timestamps or [], closes or []):
+        if c is None:
+            continue
+        d = datetime.fromtimestamp(ts + (tz_offset or 0), tz=timezone.utc).strftime("%Y-%m-%d")
+        if pts and pts[-1][0] == d:
+            pts[-1] = (d, c)
+        else:
+            pts.append((d, c))
+    return pts
+
+
+def parse_spark(payload):
+    """spark 응답 → {심볼: {date, close, prev, pct, market_time}}"""
+    out = {}
+    for r in (payload.get("spark") or {}).get("result") or []:
+        try:
+            resp = r["response"][0]
+            meta = resp.get("meta", {})
+            closes = resp["indicators"]["quote"][0]["close"]
+            pts = _clean_closes(resp.get("timestamp"), closes, meta.get("gmtoffset"))
+        except (KeyError, IndexError, TypeError):
+            continue
+        if len(pts) < 2:
+            continue
+        (d0, prev), (d1, close) = pts[-2], pts[-1]
+        out[r["symbol"]] = {
+            "date": d1, "close": close, "prev": prev, "prev_date": d0,
+            "pct": pct(close, prev),
+            "market_time": meta.get("regularMarketTime"),
+            "currency": meta.get("currency"),
+            "series": [[d, c] for d, c in pts[-6:]],
+        }
+    return out
+
+
+def row_on(row, date):
+    """해당 날짜 종가 기준으로 다시 계산한 행 (없으면 None). 유럽·지표를 美 거래일에 맞출 때 사용"""
+    series = row.get("series") or []
+    for i, (d, c) in enumerate(series):
+        if d == date and i > 0:
+            out = dict(row)
+            out.update(date=d, close=c, prev=series[i - 1][1], prev_date=series[i - 1][0],
+                       pct=pct(c, series[i - 1][1]))
+            return out
+    return None
+
+
+def parse_chart_open(payload):
+    """chart 응답 → 마지막 거래일의 (날짜, 시가, 고가, 저가)"""
+    try:
+        res = payload["chart"]["result"][0]
+        q = res["indicators"]["quote"][0]
+        off = res["meta"].get("gmtoffset", 0)
+    except (KeyError, IndexError, TypeError):
+        return None
+    rows = [(ts, o, h, l, c) for ts, o, h, l, c in
+            zip(res.get("timestamp") or [], q.get("open", []), q.get("high", []), q.get("low", []), q.get("close", []))
+            if c is not None]
+    if not rows:
+        return None
+    ts, o, h, l, _ = rows[-1]
+    d = datetime.fromtimestamp(ts + off, tz=timezone.utc).strftime("%Y-%m-%d")
+    return {"date": d, "open": o, "high": h, "low": l}
+
+
+def fetch_overseas():
+    symbols = [s for s, _, _ in OVERSEAS]
+    q = urllib.parse.quote(",".join(symbols), safe=",")
+    spark = parse_spark(http_json(f"{YAHOO}/v7/finance/spark?symbols={q}&range=5d&interval=1d"))
+    items = []
+    for sym, name, group in OVERSEAS:
+        row = {"symbol": sym, "name": name, "group": group}
+        row.update(spark.get(sym) or {"error": "데이터 없음"})
+        items.append(row)
+    # 美 3대지수는 출발 방향 판단을 위해 시가도 가져옴
+    for row in items:
+        if row["symbol"] in US_MAIN and "close" in row:
+            try:
+                o = parse_chart_open(http_json(
+                    f"{YAHOO}/v8/finance/chart/{urllib.parse.quote(row['symbol'])}?range=5d&interval=1d"))
+                if o and o["date"] == row["date"]:
+                    row["open"], row["high"], row["low"] = o["open"], o["high"], o["low"]
+                    row["open_pct"] = pct(o["open"], row["prev"])
+                    row["high_pct"] = pct(o["high"], row["prev"])
+                    row["low_pct"] = pct(o["low"], row["prev"])
+            except Exception as e:
+                print(f"  시가 조회 실패 {row['symbol']}: {e}")
+    return {"fetched_at": datetime.now(KST).isoformat(), "items": items}

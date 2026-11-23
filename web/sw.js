@@ -6,6 +6,13 @@ const SHELL = [
   'index.html',
   'style.css',
   'app.js',
+  'common.js',
+  'market.html',
+  'market.js',
+  'targets.html',
+  'targets.js',
+  'wfe.html',
+  'wfe.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-192.png',
@@ -45,11 +52,14 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  if (url.pathname.endsWith('/data.json')) {
-    // ?t= 캐시버스터는 무시하고 하나의 키로 저장
-    event.respondWith(networkFirst(req, new URL('data.json', self.registration.scope).href));
+  if (url.pathname.endsWith('.json')) {
+    // ?t= 캐시버스터는 무시하고 파일 하나당 하나의 키로 저장
+    const name = url.pathname.split('/').pop();
+    event.respondWith(networkFirst(req, new URL(name, self.registration.scope).href));
   } else if (req.mode === 'navigate') {
-    event.respondWith(networkFirst(req, new URL('index.html', self.registration.scope).href));
+    // 페이지별로 캐시 (오프라인이면 마지막으로 본 화면)
+    const page = url.pathname.endsWith('/') ? 'index.html' : url.pathname.split('/').pop();
+    event.respondWith(networkFirst(req, new URL(page, self.registration.scope).href));
   } else {
     event.respondWith(caches.match(req).then((hit) => hit || fetch(req)));
   }

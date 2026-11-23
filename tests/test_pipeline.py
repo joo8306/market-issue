@@ -131,6 +131,7 @@ class NotifyTest(unittest.TestCase):
             env = {"TELEGRAM_BOT_TOKEN": "t", "TELEGRAM_CHAT_ID": "c", "ALERT_MODE": ""}
             with mock.patch.object(notify, "DATA_FILE", data), \
                     mock.patch.object(notify, "STATE_FILE", st), \
+                    mock.patch.object(notify, "MARKET_FILE", Path(tmp) / "none.json"), \
                     mock.patch.object(notify, "send_telegram", lambda t, c, text: sent.append(text)), \
                     mock.patch.dict("os.environ", env):
                 data.write_text(json.dumps({"items": [self.item(1, True)]}))

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>시황 초안</title>
+<meta name="description" content="국내 마감시황 · 해외시황 데이터와 시황문자 초안">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div class="title"><span class="blink">●</span> MARKET_BRIEF</div>
+    <div class="header-right">
+      <button class="icon-btn" id="refresh-btn" type="button" aria-label="새로고침" title="새로고침">↻</button>
+    </div>
+  </header>
+  <nav class="pages"><a href="index.html">이슈</a><a href="market.html" class="active" aria-current="page">시황</a><a href="targets.html">전망</a><a href="wfe.html">WFE</a></nav>
+  <div class="status" id="status"></div>
+  <main id="main"><div class="empty">불러오는 중…</div></main>
+  <footer class="footer"><p>국내: 네이버 증권 · 해외: Yahoo Finance · 장중 약 5분, 해외는 20분마다 갱신</p><p>초안의 [ ] 빈칸(재료·업종)은 기사 확인 후 채워 주세요. 수치는 KRX 정보데이터시스템과 대조 후 사용하세요.</p></footer>
+</div>
+<script src="common.js"></script>
+<script src="market.js"></script>
+</body>
+</html>
