@@ -97,7 +97,11 @@ def fetch_kr_linked():
 def fetch_samsung_gdr():
     sym, name, ratio = SAMSUNG_GDR
     try:
-        d = md.http_json(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range=1d&interval=15m")
+        url = "https://{host}.finance.yahoo.com/v8/finance/chart/" + urllib.parse.quote(sym) + "?range=1d&interval=15m"
+        try:
+            d = md.http_json(url.format(host="query1"), retries=1)
+        except Exception:   # 야후가 막으면 다른 주소로 한 번 더
+            d = md.http_json(url.format(host="query2"), retries=1)
         m = d["chart"]["result"][0]["meta"]
         price, prev = m.get("regularMarketPrice"), m.get("chartPreviousClose")
         t = m.get("regularMarketTime")
@@ -116,7 +120,9 @@ def fetch_kr_closes():
             if kind == "index":
                 d = md.http_json(f"{NAVER}/index/{code}/basic")
             elif kind == "stock":
-                d = md.http_json(f"{NAVER}/stock/{code}/basic")
+                # 일별 시세의 최근 행 = KRX 정규장 종가 (basic 은 넥스트레이드 시간외 가격일 수 있음)
+                rows = md.http_json(f"{NAVER}/stock/{code}/price?pageSize=1&page=1")
+                d = {"closePrice": rows[0]["closePrice"], "localTradedAt": rows[0]["localTradedAt"] + "T15:30:00+09:00"}
             else:
                 d = md.http_json(f"{NAVER_WORLD}/stock/{code}/basic")
             out[code] = {"close": f(d.get("closePrice")), "time": d.get("localTradedAt"), "status": d.get("marketStatus")}
