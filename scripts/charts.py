@@ -231,7 +231,7 @@ def current_values(overseas, overnight):
             vals[r["code"]] = r["price"]
     for r in (overnight or {}).get("linked") or []:
         if r.get("price") is not None:
-            vals[r["code"]] = (r.get("over") or {}).get("price") or r["price"]
+            vals[r["code"]] = r["price"]   # 정규장 가격만 (시간외 가격은 표의 시간외 칸에서)
     return vals
 
 

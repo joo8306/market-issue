@@ -488,3 +488,30 @@ svg .prev-line { stroke: var(--text-faint); stroke-dasharray: 4 3; }
 .tbl-note { font-size: 11px; color: var(--text-faint); margin: 2px 0 10px; line-height: 1.6; }
 .tbl-note b { color: var(--text-dim); font-weight: 600; }
 .weekend-title + .cards + .weekend-title { margin-top: 10px; }
+
+/* 시간대별 구성: 핵심 요약 줄 · 바로가기 · 접는 섹션 */
+.summary-bar { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin: 10px 0 8px; }
+.sum-chip { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.sum-label { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sum-label em { font-style: normal; font-size: 9px; color: var(--red); border: 1px solid var(--red); border-radius: 3px; padding: 0 3px; }
+.sum-value { font-size: 16px; font-weight: 600; color: var(--navy); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sum-pct { font-size: 12px; font-family: var(--mono); }
+.sec-nav { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0; position: sticky; top: 0; z-index: 5; background: var(--bg); scrollbar-width: none; }
+.sec-nav::-webkit-scrollbar { display: none; }
+.sec-nav button { flex: none; border: 1px solid var(--border); background: var(--bg-card); color: var(--navy); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+details.sec > summary.sec-head { list-style: none; cursor: pointer; }
+details.sec > summary.sec-head::-webkit-details-marker { display: none; }
+details.sec > summary.sec-head h2 { display: inline; margin: 0; }
+details.sec > summary.sec-head h2::before { content: '▾ '; color: var(--gold); }
+details.sec:not([open]) > summary.sec-head h2::before { content: '▸ '; }
+details.sec:not([open]) { margin-bottom: 4px; }
+.tbl .sub-tag { font-size: 10px; color: var(--text-faint); font-weight: 400; }
+details.sec > summary.sec-head { color: var(--text); }
+details.sec > summary.sec-head h2 { font-size: inherit; font-weight: inherit; }
+#main .grid-tables.night-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 580px), 1fr)); }
+@media (max-width: 600px) {
+  .summary-bar { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .sum-chip { padding: 6px 7px; }
+  .sum-value { font-size: 13px; }
+  .sum-label { font-size: 10px; }
+}
