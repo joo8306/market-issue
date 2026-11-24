@@ -74,11 +74,77 @@
     }).join('');
   }
 
+  // ---------- 야간·주말 지표 ----------
+  const usd = (v, d = 2) => (v == null ? '-' : `$${fmt(v, d)}`);
+  const won = (v) => (v == null ? '-' : `${fmt(v, 0)}원`);
+  const tShort = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+  };
+  const chgCell = (v) => `<td class="num ${dirClass(v)}">${pct(v)}</td>`;
+
+  function perpsHtml(on) {
+    if (!on?.perps?.length) return '';
+    return `<table class="tbl"><thead><tr><th>무기한 선물 <span class="badge-unofficial">비공식</span></th><th class="num">현재</th><th class="num">국내 종가 대비</th><th class="num">24시간</th><th class="num">거래대금(24h)</th></tr></thead><tbody>
+      ${on.perps.map((p) => {
+        const now = p.kind === 'stock' ? `${won(p.krw)}<div class="sub">${usd(p.mark)}</div>` : p.kind === 'usd' ? usd(p.mark) : fmt(p.mark);
+        const ref = p.kind === 'stock' ? won(p.ref_close) : p.kind === 'usd' ? usd(p.ref_close) : fmt(p.ref_close);
+        return `<tr><th>${esc(p.name)}</th><td class="num">${now}</td>
+          <td class="num ${dirClass(p.vs_close)}">${pct(p.vs_close)}<div class="sub" title="비교 기준 시각 ${esc(tShort(p.ref_time))}">기준 ${ref}</div></td>
+          ${chgCell(p.pct24)}<td class="num">${p.vol24_usd == null ? '-' : `$${fmt(p.vol24_usd / 1e6, 1)}M`}</td></tr>`;
+      }).join('')}
+    </tbody></table>`;
+  }
+
+  function futuresHtml(on) {
+    if (!on?.us_futures?.length) return '';
+    return `<table class="tbl"><thead><tr><th>美 지수 선물</th><th class="num">현재</th><th class="num">등락</th><th class="num">시각</th></tr></thead><tbody>
+      ${on.us_futures.map((r) => `<tr><th>${esc(r.name)}</th><td class="num">${fmt(r.price)}</td>${chgCell(r.pct)}<td class="num muted">${esc(tShort(r.time))}</td></tr>`).join('')}
+    </tbody></table>`;
+  }
+
+  function linkedHtml(on, group, title) {
+    const rows = (on?.linked || []).filter((r) => r.group === group);
+    if (!rows.length) return '';
+    return `<table class="tbl"><thead><tr><th>${title}</th><th class="num">현재</th><th class="num">등락</th><th class="num">시간외</th></tr></thead><tbody>
+      ${rows.map((r) => {
+        if (r.price == null) return `<tr><th>${esc(r.name)}</th><td class="num muted" colspan="3">수집 실패</td></tr>`;
+        const extra = r.krw_per_share ? `<div class="sub">주당 ${won(r.krw_per_share)} (국내 ${pct(r.vs_kr_close)})</div>` : '';
+        const over = r.over ? `<span class="${dirClass(r.over.pct)}">${pct(r.over.pct)}</span><div class="sub">${esc(r.over.session)}</div>` : '<span class="muted">-</span>';
+        return `<tr><th>${esc(r.name)}${r.status === 'OPEN' ? ' <span class="live">장중</span>' : ''}</th><td class="num">${usd(r.price)}${extra}</td>${chgCell(r.pct)}<td class="num">${over}</td></tr>`;
+      }).join('')}
+    </tbody></table>`;
+  }
+
+  function nightHtml(on, st) {
+    if (!on) return '';
+    return `
+      <section class="panel">
+        <h2>야간·주말 지표 <span class="muted">${st?.fetched_ts ? `확인 ${relTime(st.fetched_ts)}` : ''}${on.usdkrw ? ` · 원/달러 ${fmt(on.usdkrw, 1)}` : ''}</span></h2>
+        <div class="tbl-wrap">${perpsHtml(on)}</div>
+        <div class="grid-tables">
+          ${futuresHtml(on)}
+          ${linkedHtml(on, 'kr', '한국 관련 (해외 상장)')}
+          ${linkedHtml(on, 'semi', '반도체')}
+          ${linkedHtml(on, 'adr', '한국 ADR (뉴욕)')}
+        </div>
+        <details class="foot-notes"><summary>기준·주의</summary><ol class="notes">
+          <li><b>무기한 선물</b>: 하이퍼리퀴드(trade.xyz)에서 24시간·주말에도 거래되는 비공식 상품입니다. 한국 장이 닫힌 동안의 <b>방향 참고용</b>이며, 거래가 적으면 가격이 쉽게 튑니다(24h 거래대금 함께 확인).</li>
+          <li><b>국내 종가 대비</b>: 삼성전자·SK하이닉스는 달러 가격 × 원/달러(하이퍼리퀴드 기준가)로 환산해 네이버 국내 마지막 체결가(넥스트레이드 포함일 수 있음)와 비교합니다. 코스피200은 지수 포인트를 코스피200 정규장 종가와 비교합니다.</li>
+          <li><b>코스피200 야간선물(KRX 야간시장)</b>은 무료 공개 시세가 없어 아직 넣지 않았습니다. 위의 무기한 코스피200(KR200)으로 대신 참고하세요.</li>
+          <li><b>삼성전자 GDR</b>: 런던 상장, 1 GDR = 보통주 25주. 주당 원화 환산값을 국내 종가와 비교합니다.</li>
+          <li>미국 선물·종목은 네이버 해외 시세(일부 지연 가능), 삼성전자 GDR은 야후 시세입니다. 앱은 약 5분마다 갱신합니다.</li>
+        </ol></details>
+      </section>`;
+  }
+
   function render() {
     const st = data.status || {};
     $('status').innerHTML = [
       statusLine(st.market_kr, '국내'),
       statusLine(st.market_overseas, '해외'),
+      statusLine(st.overnight, '야간'),
       `<span>빌드 ${relTime(data.generated_ts)}</span>`,
     ].filter(Boolean).join('<span class="dot-sep">·</span>');
 
@@ -98,7 +164,12 @@
       </section>`;
     // 오전에는 해외시황, 오후에는 국내 마감시황을 위에
     const hour = +new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).format(new Date()) % 24;
-    $('main').innerHTML = hour < 12 ? overnight + closing : closing + overnight;
+    const night = nightHtml(data.overnight, st.overnight);
+    // 주말·새벽(~9시)·저녁(18시~)에는 야간·주말 지표를 맨 위에
+    const dow = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(new Date());
+    const nightFirst = dow === 'Sat' || dow === 'Sun' || hour < 9 || hour >= 18;
+    const body = hour < 12 ? overnight + closing : closing + overnight;
+    $('main').innerHTML = nightFirst ? night + body : body + night;
   }
 
   async function refresh() {

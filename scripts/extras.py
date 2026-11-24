@@ -12,6 +12,7 @@ from pathlib import Path
 
 import briefing
 import marketdata
+import overnight
 import targets
 import wfe_country
 
@@ -36,6 +37,7 @@ SOURCES = {
     # 이름: (수집 함수, 갱신 주기(초) 또는 함수)
     "market_kr": (marketdata.fetch_kr_market, kr_refresh_sec),
     "market_overseas": (marketdata.fetch_overseas, overseas_refresh_sec),
+    "overnight": (overnight.fetch_overnight, 4 * 60),   # 야간·주말 지표 (매 실행마다)
     "kospi_history": (lambda: marketdata.fetch_kospi_history(pages=4), 6 * 3600),
     "wfe_country": (wfe_country.build, 24 * 3600),  # WFE 여러 호 + 유로넥스트 → 국가별
 }
@@ -79,9 +81,10 @@ def build_extras(out_dir, state_dir=STATE_DIR, now=None, sources=SOURCES, target
     kr, ov = got.get("market_kr"), got.get("market_overseas")
     market = {
         "generated_ts": now_ts,
-        "status": {k: status[k] for k in ("market_kr", "market_overseas") if k in status},
+        "status": {k: status[k] for k in ("market_kr", "market_overseas", "overnight") if k in status},
         "kr": kr,
         "overseas": ov,
+        "overnight": got.get("overnight"),
         "drafts": {
             "closing": briefing.closing_draft(kr) if kr else None,
             "overnight": briefing.overnight_draft(ov) if ov else None,
