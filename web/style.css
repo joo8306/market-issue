@@ -441,3 +441,10 @@ svg .ln.s2 { stroke: var(--gold); } .key.line.s2 { background: var(--gold); }
 .row-orig { font-size: 12px; color: var(--text-faint); line-height: 1.4; margin: -2px 0 4px; overflow-wrap: anywhere; }
 /* 전체 탭: 기사마다 국내/해외 표시 */
 .rtag { font-size: 10px; font-weight: 600; padding: 0 5px; border: 1px solid; border-radius: 4px; line-height: 16px; margin-right: 6px; }
+
+/* 야간·주말 지표 */
+.tbl .sub { font-size: 11px; color: var(--text-faint); font-weight: 400; }
+.badge-unofficial { font-size: 10px; font-weight: 600; color: var(--red); border: 1px solid var(--red); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+.tbl .live { font-size: 10px; color: var(--red); font-weight: 600; }
+.foot-notes { margin-top: 6px; }
+.grid-tables > table { align-self: start; }
