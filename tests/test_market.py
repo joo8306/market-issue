@@ -357,7 +357,7 @@ class TargetsTest(unittest.TestCase):
     def test_committed_data_loads(self):
         rows = targets.load_rows()
         self.assertTrue(all(r["기준"] for r in rows), "모든 행에 기준(무엇을 뜻하는 수치인지)이 있어야 함")
-        self.assertTrue(all(r["제시일"] and r["링크"] for r in rows))
+        self.assertTrue(all(r["제시일"] and (r["링크"] or r["출처"]) for r in rows))  # 링크가 없으면 출처 이름이라도
 
 
 class ExtrasCacheTest(unittest.TestCase):

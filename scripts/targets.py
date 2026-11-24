@@ -36,13 +36,16 @@ FOREIGN = ["Goldman", "골드만", "Morgan Stanley", "모건스탠리", "JPMorga
 # ===== 값 해석 =====
 def normalize_period(text):
     t = (text or "").replace(" ", "")
-    rules = [
+    if "미상" in t:
+        return "기간 미상"
+    rules = [  # 순서 중요: '2027년 1분기'는 내년이 아니라 분기
+        (("분기", "1Q", "2Q", "3Q", "4Q"), "분기"),
+        (("하반기", "상반기", "반기"), "6개월"),
         (("12개월", "12M", "1년"), "12개월"),
         (("6개월", "6M"), "6개월"),
         (("3개월", "3M"), "3개월"),
         (("연말",), "연말"),
         (("내년", "연간", "2027", "2028"), "내년"),
-        (("분기", "Q"), "분기"),
         (("월간", "월"), "월간"),
         (("단기", "주간", "지지", "하단", "레벨"), "단기"),
     ]
@@ -239,6 +242,30 @@ def load_meta(path=META_PATH):
         return {}
 
 
+def horizon_tag(rec):
+    """분기·반기·월간·연말 전망은 '어느 분기/반기/해'인지까지 같아야 비교 (예: 26년 4분기 ≠ 27년 1분기)"""
+    if rec["period"] not in ("분기", "6개월", "월간", "연말"):
+        return ""
+    t = f"{rec.get('basis', '')} {rec.get('text', '')}"
+    year = int(rec["date"][:4])
+    m = re.search(r"20(\d\d)\s*년|(?<!\d)(\d\d)\s*년", t)
+    if m:
+        year = 2000 + int(m.group(1) or m.group(2))
+    elif "내년" in t:
+        year += 1
+    q = re.search(r"([1-4])\s*분기|([1-4])Q", t)
+    if q:
+        return f"{year}-{q.group(1) or q.group(2)}Q"
+    if "하반기" in t:
+        return f"{year}-H2"
+    if "상반기" in t:
+        return f"{year}-H1"
+    mo = re.search(r"(\d{1,2})\s*월", t)
+    if rec["period"] == "월간" and mo:
+        return f"{year}-{int(mo.group(1)):02d}"
+    return str(year)
+
+
 def change_of(rec):
     p = rec.get("prev")
     if p is None:
@@ -299,7 +326,7 @@ def build_payload(rows, kospi_history=None, today=None, meta=None):
     # (기간이 다르면 기준이 달라 비교하지 않음 → 직전값이 없으면 기록된 '변경' 메모를 사용)
     last = {}
     for rec in sorted(recs, key=lambda x: x["date"]):
-        key = (rec["broker"], rec["period"])
+        key = (rec["broker"], rec["period"], horizon_tag(rec))
         prev = last.get(key) if rec["period"] != "기간 미상" else None  # 기간을 모르면 비교할 수 없음
         if prev and prev["date"] == rec["date"]:
             prev = prev.get("prev_rec")
