@@ -46,6 +46,8 @@ jobs:
       - name: Build site
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}  # 옵션
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}  # 옵션: 해외 뉴스 제목 번역 (없으면 무료 구글 번역 시도)
+          TRANSLATE_MODEL: ${{ vars.TRANSLATE_MODEL }}         # 옵션: 번역 모델 변경
         run: python scripts/build.py
 
       - name: Telegram alerts
