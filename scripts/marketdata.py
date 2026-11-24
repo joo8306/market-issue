@@ -165,24 +165,8 @@ def fetch_kr_market():
         except Exception as e:
             print(f"  시총 상위 실패 {code}: {e}")
             out["top_mcap"][code] = []
-    try:
-        out["sectors"] = parse_sectors(http_json(f"{NAVER}/stocks/industry?page=1&pageSize=100"))
-    except Exception as e:
-        print(f"  업종 등락 실패: {e}")
-        out["sectors"] = []
     return out
 
-
-def parse_sectors(payload):
-    """네이버 업종 목록 → [{name, pct, rise, fall, total}] (등락률 높은 순)"""
-    out = []
-    for g in (payload or {}).get("groups") or []:
-        p = num(g.get("changeRate"))
-        if p is None:
-            continue
-        out.append({"name": g.get("name"), "pct": p, "rise": g.get("riseCount"), "fall": g.get("fallCount"),
-                    "total": g.get("totalCount")})
-    return sorted(out, key=lambda x: -x["pct"])
 
 
 def parse_index_history(rows):

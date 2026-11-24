@@ -476,7 +476,7 @@ svg .prev-line { stroke: var(--text-faint); stroke-dasharray: 4 3; }
   #main .grid-tables > table { display: block; overflow-x: auto; }
 }
 
-/* 신선도 · 주말 요약 · 장중 수급 · 업종 */
+/* 신선도 · 주말 요약 */
 .fresh { font-size: 10px; color: var(--text-faint); font-weight: 400; }
 .fresh.warn { color: var(--red); }
 .spark-cell .rec { display: block; font-size: 9px; color: var(--text-faint); line-height: 1; }
@@ -485,12 +485,3 @@ svg .prev-line { stroke: var(--text-faint); stroke-dasharray: 4 3; }
 .weekend .cards { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin: 6px 0; }
 .weekend .card-value { font-size: 20px; }
 .weekend .card-value.up { color: var(--red); } .weekend .card-value.down { color: var(--navy-2); }
-.flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 12px; margin: 4px 0 12px; }
-.flow-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
-.flow-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-svg .ln.flow { fill: none; stroke-width: 1.8; }
-svg .ln.f-for, .key.line.f-for { stroke: var(--red); background: var(--red); }
-svg .ln.f-inst, .key.line.f-inst { stroke: var(--gold); background: var(--gold); }
-svg .ln.f-ind, .key.line.f-ind { stroke: var(--navy-2); background: var(--navy-2); }
-svg .grid.zero { stroke: var(--text-faint); }
-.sectors { margin-bottom: 10px; }
