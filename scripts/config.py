@@ -18,9 +18,9 @@ GN_SEARCH = "https://news.google.com/rss/search?q="
 
 FEEDS = {
     # ---------- 한국 ----------
-    "한경 증권": ("https://www.hankyung.com/feed/finance", "KR", {}),
-    "한경 경제": ("https://www.hankyung.com/feed/economy", "KR", {}),
-    "한경 국제": ("https://www.hankyung.com/feed/international", "KR", {}),
+    # 한경 RSS 는 GitHub 서버 접속을 막아(403) 구글뉴스 경유로 수집
+    "한경": (GN_SEARCH + "site:hankyung.com+(증시+OR+코스피+OR+경제+OR+금리+OR+환율)+when:1d" + GN_KO, "KR", {}),
+    "머니투데이·이데일리·뉴스1": (GN_SEARCH + "(site:mt.co.kr+OR+site:edaily.co.kr+OR+site:news1.kr)+(증시+OR+코스피+OR+환율)+when:1d" + GN_KO, "KR", {}),
     "연합 경제": ("https://www.yna.co.kr/rss/economy.xml", "KR", {}),
     "연합 증권": ("https://www.yna.co.kr/rss/market.xml", "KR", {}),
     "연합 국제": ("https://www.yna.co.kr/rss/international.xml", "KR", {}),
@@ -45,11 +45,9 @@ FEEDS = {
     "CNBC World": ("https://www.cnbc.com/id/100727362/device/rss/rss.html", "GLOBAL", {}),
     "CNBC Tech": ("https://www.cnbc.com/id/19854910/device/rss/rss.html", "GLOBAL", {}),
     "MarketWatch": ("https://feeds.marketwatch.com/marketwatch/topstories/", "GLOBAL", {}),
-    "MarketWatch Pulse": ("https://feeds.marketwatch.com/marketwatch/marketpulse/", "GLOBAL", {}),
-    "WSJ Markets": ("https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "GLOBAL", {}),
-    "WSJ World": ("https://feeds.a.dj.com/rss/RSSWorldNews.xml", "GLOBAL", {}),
+    # WSJ 직접 RSS·MarketWatch Pulse 는 갱신이 멈춰 WSJ 는 구글뉴스 경유로 교체
+    "WSJ": (GN_SEARCH + "site:wsj.com+(markets+OR+stocks+OR+economy+OR+Fed)+when:1d" + GN_EN, "GLOBAL", {}),
     "FT Markets": ("https://www.ft.com/markets?format=rss", "GLOBAL", {}),
-    "Yahoo Finance": ("https://finance.yahoo.com/news/rssindex", "GLOBAL", {}),
     "Investing 증시": ("https://www.investing.com/rss/news_25.rss", "GLOBAL", {}),
     "Investing 경제": ("https://www.investing.com/rss/news_14.rss", "GLOBAL", {}),
     "Investing 원자재": ("https://www.investing.com/rss/news_11.rss", "GLOBAL", {}),
