@@ -293,7 +293,7 @@ def broker_timelines(recs, today):
         out.append({
             "broker": broker, "group": items[0]["group"], "latest_date": items[0]["date"],
             "count": len(items), "ups": ups, "downs": downs,
-            "items": [{k: i[k] for k in ("date", "date_kind", "period", "basis", "text", "level", "target", "low",
+            "items": [{k: i[k] for k in ("date", "date_kind", "period", "horizon", "basis", "text", "level", "target", "low",
                                          "high", "change", "change_note", "prev", "reason", "source", "link")}
                       for i in items],
         })
@@ -318,6 +318,7 @@ def build_payload(rows, kospi_history=None, today=None, meta=None):
             "basis": r.get("기준", ""),
         }
         rec["level"] = level(rec)
+        rec["horizon"] = horizon_tag(rec)
         if rec["level"] is None:
             continue
         recs.append(rec)
@@ -345,6 +346,7 @@ def build_payload(rows, kospi_history=None, today=None, meta=None):
         change = rec["change"]
         snapshot.append(dict(rec, change=change, age_days=age,
                              recent=age <= 31 and change in ("상향", "하향", "신규"),
+                             is_new=age <= 7 and change in ("상향", "하향", "신규"),
                              stale=age > STALE_DAYS.get(rec["period"], 92)))
     order = {p: i for i, p in enumerate(PERIODS)}
     snapshot.sort(key=lambda r: r["date"], reverse=True)  # 같은 기간 안에서는 최신순
