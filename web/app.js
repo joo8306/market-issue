@@ -195,6 +195,61 @@
     }
   }
 
+  // ---------- 해외 기사 제목 번역 (내 기기에서 구글 번역 호출) ----------
+  // 서버(GitHub)에서는 구글이 번역 요청을 막아, 앱을 연 기기에서 직접 번역하고 기기에 저장해 둠
+  const TR_KEY = 'hot-title-ko';
+  const TR_URL = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=t&q=';
+  const HANGUL = /[가-힣]/;
+  const trCache = store.get(TR_KEY, {});
+  let trBusy = false;
+  let trPausedUntil = 0;
+
+  const needsKo = (it) => it.region === 'GLOBAL' && !it.title_ko && !HANGUL.test(it.title) && /[A-Za-z]/.test(it.title);
+
+  function applyCachedTitles(items) {
+    for (const it of items) if (!it.title_ko && trCache[it.id]) it.title_ko = trCache[it.id];
+  }
+
+  function saveTrCache(items) {
+    const keep = new Set(items.map((i) => i.id));
+    const keys = Object.keys(trCache);
+    const ordered = [...keys.filter((k) => keep.has(k)), ...keys.filter((k) => !keep.has(k))].slice(0, 1500);
+    store.set(TR_KEY, Object.fromEntries(ordered.map((k) => [k, trCache[k]])));
+  }
+
+  async function translateBatch(titles) {
+    const q = encodeURIComponent(titles.map((t) => t.replace(/\n/g, ' ')).join('\n'));
+    const res = await fetch(TR_URL + q);
+    if (!res.ok) throw new Error(`번역 ${res.status}`);
+    const data = await res.json();
+    const ko = data[0].map((seg) => seg[0] || '').join('').split('\n').map((x) => x.trim());
+    if (ko.length !== titles.length) throw new Error('번역 개수 불일치');
+    return ko;
+  }
+
+  async function translatePending() {
+    if (trBusy || Date.now() < trPausedUntil || !state.data) return;
+    const items = state.data.items;
+    const todo = items.filter(needsKo).slice(0, 240);
+    if (!todo.length) return;
+    trBusy = true;
+    try {
+      for (let i = 0; i < todo.length; i += 12) {
+        const chunk = todo.slice(i, i + 12);
+        const ko = await translateBatch(chunk.map((it) => it.title));
+        chunk.forEach((it, j) => { if (ko[j]) { it.title_ko = ko[j]; trCache[it.id] = ko[j]; } });
+        saveTrCache(items);
+        render();
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    } catch (e) {
+      trPausedUntil = Date.now() + 10 * 60 * 1000;   // 막히면 10분 쉬었다가 다시 시도 (그동안 영문 표시)
+      console.warn('제목 번역 중단:', e.message);
+    } finally {
+      trBusy = false;
+    }
+  }
+
   // ---------- 데이터 ----------
   function applyData(data, { notify = false } = {}) {
     const seen = store.get(SEEN_KEY, null);
@@ -206,7 +261,9 @@
     store.set(SEEN_KEY, [...new Set([...ids, ...(seen || [])])].slice(0, 800));
 
     state.data = data;
+    applyCachedTitles(data.items);
     render();
+    translatePending();
 
     if (notify && fresh.length) {
       showToast(`새 이슈 ${fresh.length}건`);
