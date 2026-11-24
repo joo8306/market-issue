@@ -139,8 +139,8 @@
     if (!list?.length) return '';
     const row = (s) => `<tr><th>${esc(s.name)}</th><td class="num ${dirClass(s.pct)}">${pct(s.pct)}</td><td class="num muted">${fmt(s.rise, 0)}↑ ${fmt(s.fall, 0)}↓</td></tr>`;
     return `<div class="grid-tables sectors">
-      <table class="tbl"><thead><tr><th>업종 상위</th><th class="num">등락률</th><th class="num">상승·하락</th></tr></thead><tbody>${list.slice(0, 5).map(row).join('')}</tbody></table>
-      <table class="tbl"><thead><tr><th>업종 하위</th><th class="num">등락률</th><th class="num">상승·하락</th></tr></thead><tbody>${list.slice(-5).reverse().map(row).join('')}</tbody></table>
+      <table class="tbl"><thead><tr><th>업종 상위 <span class="muted">네이버 업종·NXT 반영 가능</span></th><th class="num">등락률</th><th class="num">상승·하락</th></tr></thead><tbody>${list.slice(0, 5).map(row).join('')}</tbody></table>
+      <table class="tbl"><thead><tr><th>업종 하위 <span class="muted">네이버 업종·NXT 반영 가능</span></th><th class="num">등락률</th><th class="num">상승·하락</th></tr></thead><tbody>${list.slice(-5).reverse().map(row).join('')}</tbody></table>
     </div>`;
   }
 
@@ -284,6 +284,13 @@
         ${sectorsHtml(kr.sectors)}
         ${draftHtml(data.drafts?.closing, 'copy-closing')}
         <details><summary>확인표 · 시총 상위</summary>${checksHtml(data.drafts?.closing)}${moversHtml(kr.top_mcap?.KOSPI)}</details>
+        <details class="foot-notes"><summary>기준·주의 (KRX / 넥스트레이드)</summary><ol class="notes">
+          <li><b>지수·지수 그래프</b>: KRX 기준입니다. 코스피·코스닥 지수는 KRX 체결가로만 산출되며 넥스트레이드(NXT) 거래는 반영되지 않습니다. 당일 그래프도 15:30 정규장 마감까지입니다.</li>
+          <li><b>투자자별 순매수(장중 추이 포함)</b>: 네이버가 제공하는 KRX 시장 투자자별 매매동향 값입니다. NXT 거래는 포함되지 않는 것으로 판단되나, 네이버가 기준을 명시하지 않아 확인이 필요합니다. 장중 추이는 앱이 5분마다 기록한 누적값입니다.</li>
+          <li><b>업종 등락 상·하위</b>: 네이버 자체 업종 분류·계산(KRX 업종지수와 다름)입니다. 구성 종목 시세가 NXT 애프터마켓(~20:00) 이후 시각으로 갱신되므로 <b>15:30 이후에는 NXT 가격이 반영될 수 있습니다</b>. 마감시황 문자에는 KRX 종가 기준으로 확인해 쓰세요.</li>
+          <li><b>시총 상위</b>: 업종 등락과 같은 네이버 시세라, 장 마감 후에는 NXT 가격이 반영될 수 있습니다.</li>
+          <li><b>마감시황 초안</b>: 지수·등락률·수급은 위 KRX 기준 값으로 만듭니다.</li>
+        </ol></details>
       </section>`;
     const overnight = `
       <section class="panel">
