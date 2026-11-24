@@ -159,8 +159,8 @@
     updated.textContent = `서버 갱신 ${fmtKst(d.generated_ts)} (${relTime(d.generated_ts)})`;
     updated.classList.toggle('stale', ageMin >= STALE_MIN);
     if (ageMin >= STALE_MIN) updated.textContent += ' ⚠ 지연 중';
-    $('checked').textContent = state.lastChecked
-      ? `확인 ${relTime(Math.floor(state.lastChecked / 1000))}` : '';
+    $('checked').textContent = (state.lastChecked
+      ? `확인 ${relTime(Math.floor(state.lastChecked / 1000))}` : '') + (trStatus.text ? ` · ${trStatus.text}` : '');
 
     const { krClosedToday } = marketStatus();
     const notice = $('notice');
@@ -203,6 +203,9 @@
   const trCache = store.get(TR_KEY, {});
   let trBusy = false;
   let trPausedUntil = 0;
+  const trStatus = { text: '' };   // 화면 상단에 번역 상태 표시 (원인 확인용)
+  const MM_URL = 'https://api.mymemory.translated.net/get?langpair=en|ko&q=';
+  let mmLeft = 40;                  // 보조 번역(MyMemory)은 무료 한도가 작아 한 번 열 때 최대 40건
 
   const needsKo = (it) => it.region === 'GLOBAL' && !it.title_ko && !HANGUL.test(it.title) && /[A-Za-z]/.test(it.title);
 
@@ -227,25 +230,58 @@
     return ko;
   }
 
+  // 보조: MyMemory (무료, 한 건씩)
+  async function translateOne(title) {
+    const res = await fetch(MM_URL + encodeURIComponent(title));
+    if (!res.ok) throw new Error(`보조 번역 ${res.status}`);
+    const d = await res.json();
+    const ko = d?.responseData?.translatedText;
+    if (!ko || d.responseStatus !== 200 || /MYMEMORY WARNING/i.test(ko)) throw new Error('보조 번역 한도 초과');
+    return ko.trim();
+  }
+
   async function translatePending() {
     if (trBusy || Date.now() < trPausedUntil || !state.data) return;
     const items = state.data.items;
     const todo = items.filter(needsKo).slice(0, 240);
-    if (!todo.length) return;
+    if (!todo.length) { if (trStatus.text.startsWith('번역 중')) { trStatus.text = ''; renderStatus(); } return; }
     trBusy = true;
+    let done = 0;
+    const show = (t) => { trStatus.text = t; renderStatus(); };
+    const put = (it, ko) => { if (ko) { it.title_ko = ko; trCache[it.id] = ko; done += 1; } };
     try {
-      for (let i = 0; i < todo.length; i += 12) {
-        const chunk = todo.slice(i, i + 12);
-        const ko = await translateBatch(chunk.map((it) => it.title));
-        chunk.forEach((it, j) => { if (ko[j]) { it.title_ko = ko[j]; trCache[it.id] = ko[j]; } });
-        saveTrCache(items);
-        render();
-        await new Promise((r) => setTimeout(r, 400));
+      show(`번역 중 0/${todo.length}`);
+      let i = 0;
+      try {
+        for (; i < todo.length; i += 12) {
+          const chunk = todo.slice(i, i + 12);
+          const ko = await translateBatch(chunk.map((it) => it.title));
+          chunk.forEach((it, j) => put(it, ko[j]));
+          saveTrCache(items); render(); show(`번역 중 ${done}/${todo.length}`);
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      } catch (e) {
+        // 구글이 막히면 보조 번역으로 남은 것 일부라도
+        const errG = e.message || String(e);
+        const rest = todo.slice(i).filter((it) => !it.title_ko).slice(0, mmLeft);
+        try {
+          for (const it of rest) {
+            put(it, await translateOne(it.title)); mmLeft -= 1;
+            if (done % 5 === 0) { saveTrCache(items); render(); show(`번역 중(보조) ${done}/${todo.length}`); }
+            await new Promise((r) => setTimeout(r, 250));
+          }
+        } catch (e2) {
+          throw new Error(`구글: ${errG} / 보조: ${e2.message || e2}`);
+        }
+        if (todo.some((it) => !it.title_ko)) throw new Error(`구글: ${errG} (보조 번역으로 ${done}건만)`);
       }
+      show('');
     } catch (e) {
       trPausedUntil = Date.now() + 10 * 60 * 1000;   // 막히면 10분 쉬었다가 다시 시도 (그동안 영문 표시)
-      console.warn('제목 번역 중단:', e.message);
+      show(`번역 실패 — ${String(e.message || e).slice(0, 80)}`);
     } finally {
+      saveTrCache(items);
+      render();
       trBusy = false;
     }
   }
@@ -367,6 +403,13 @@
   setupNotifyButton();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then((reg) => reg.update()).catch(() => {}));
+    // 새 버전이 설치되면 한 번 새로고침해 바로 적용 (홈 화면 앱이 옛 버전에 머무는 문제 방지)
+    let reloaded = false;
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !reloaded) { reloaded = true; window.location.reload(); }
+    });
   }
 })();
