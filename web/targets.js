@@ -6,7 +6,7 @@
   const CHANGE = { 상향: '↑ 상향', 하향: '↓ 하향', 유지: '→ 유지', 신규: '신규' };
   const LONG = ['12개월', '연말', '내년'];
   let data = null;
-  const state = { showOld: false };
+  const state = { showOld: false, tab: 'ny' };
 
   const md = (d) => (d ? `${+d.slice(5, 7)}.${d.slice(8, 10)}` : '-');
   const levelText = (r) => {
@@ -74,11 +74,87 @@
       </tr>`).join('')}</tbody></table></div>`;
   }
 
+  // ----- 기간(열) 정의: 같은 기간이라도 분기는 어느 분기인지까지 나눔 -----
+  const qLabel = (h) => (/^(\d{4})-([1-4])Q$/.test(h || '') ? `${h.slice(2, 4)}년 ${h.slice(5, 6)}분기` : '분기');
+  const hLabel = (h) => (/^(\d{4})-H([12])$/.test(h || '') ? `${h.slice(2, 4)}년 ${h.endsWith('2') ? '하반기' : '상반기'}` : '');
+  function colOf(r) {
+    switch (r.period) {
+      case '단기': return { key: 'short', label: '단기 하단', order: 0 };
+      case '월간': return { key: `m:${r.horizon}`, label: `월간 ${r.horizon || ''}`, order: 1 };
+      case '3개월': return { key: '3m', label: '3개월', order: 2 };
+      case '분기': return { key: `q:${r.horizon}`, label: qLabel(r.horizon), order: 3 };
+      case '6개월': return { key: `h:${r.horizon}`, label: hLabel(r.horizon) || '6개월', order: 4 };
+      case '연말': return { key: `y:${r.horizon}`, label: `${String(r.horizon).slice(2)}년 연말`, order: 5 };
+      case '내년': return { key: 'ny', label: '2027년', order: 6 };
+      case '12개월': return { key: '12m', label: '12개월', order: 7 };
+      default: return { key: 'lt', label: '중장기·기간 미상', order: 8 };
+    }
+  }
+  function columnsOf(rows) {
+    const m = new Map();
+    rows.forEach((r) => { const c = colOf(r); if (!m.has(c.key)) m.set(c.key, c); });
+    return [...m.values()].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key));
+  }
+  const short = (r) => (r.period === '단기' && r.target != null ? fmt(r.target, 0) + (r.low != null ? ` (${fmt(r.low, 0)}~${fmt(r.high, 0)})` : '') : levelText(r));
+  const prevShort = (p) => (p.text.length > 26 ? `${p.text.slice(0, 26)}…` : p.text);
+  const arrow = (r) => ({ 상향: '<span class="chg-상향">↑</span>', 하향: '<span class="chg-하향">↓</span>', 유지: '<span class="muted">→</span>' }[r.change] || '');
+  const anchor = (b) => `b-${encodeURIComponent(b)}`;
+  // 같은 기간의 직전 전망이 없을 때(2027년·12개월 칸), 그 증권사의 바로 앞 중장기 전망을 '기준 다름'으로 보여 줌
+  const LONGISH = ['내년', '연말', '6개월', '12개월', '기간 미상'];
+  function prevOf(r) {
+    if (r.prev) return { ...r.prev, label: '' };
+    if (!['내년', '12개월'].includes(r.period)) return null;
+    const b = (data.brokers || []).find((x) => x.broker === r.broker);
+    const it = b?.items.find((i) => i.date < r.date && LONGISH.includes(i.period));
+    if (!it) return null;
+    const label = colOf(it).key === 'lt' ? '중장기' : colOf(it).label;
+    const text = it.text.replace(/^(하반기|상반기|연말)\s*/, '');  // '26년 하반기 하반기 상단' 같은 중복 제거
+    return { text, date: it.date, label };
+  }
+
+  // 안 B: 탭으로 고른 기간의 증권사 비교표 (근거·출처 포함)
+  function compareTable(rows) {
+    if (!rows.length) return '';
+    return `<div class="tbl-wrap"><table class="tbl compare"><thead><tr><th>증권사</th><th class="num">목표·밴드</th><th class="num">발표일</th><th>변경</th><th>직전 전망</th><th>전망 근거 요약</th><th>출처</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr>
+        <th>${r.recent ? '<span class="star">★</span>' : ''}<a href="#${anchor(r.broker)}" class="to-hist">${esc(r.broker)}</a><div class="basis">${esc(r.group)}</div></th>
+        <td class="num"><b>${esc(r.text || levelText(r))}</b>${r.basis ? `<div class="basis">${esc(r.basis)}</div>` : ''}</td>
+        <td class="num">${md(r.date)}${r.date_kind === '보도일' ? '<span class="muted"> 보도</span>' : ''}${r.stale ? '<span class="muted"> (오래됨)</span>' : ''}</td>
+        <td class="chg-${esc(r.change)}">${esc(CHANGE[r.change] || r.change || '')}</td>
+        <td class="prev">${(() => { const p = prevOf(r); return p ? `${p.label ? `<span class="tag-diff">${esc(p.label)}</span> ` : ''}${esc(p.text)}<div class="basis">${md(p.date)}${p.label ? ' · 기준 다름' : ''}</div>` : '<span class="muted">-</span>'; })()}</td>
+        <td class="note">${esc(r.reason)}</td>
+        <td>${r.link ? `<a href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.source || '링크')}</a>` : esc(r.source)}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  // 안 A: 증권사 한 줄(현재) + 아랫줄(직전) 정리표
+  function matrixHtml(rows, title) {
+    if (!rows.length) return '';
+    const cols = columnsOf(rows);
+    const brokers = new Map();
+    rows.forEach((r) => {
+      const b = brokers.get(r.broker) || {};
+      const k = colOf(r).key;
+      if (!b[k] || b[k].date < r.date) b[k] = r;
+      brokers.set(r.broker, b);
+    });
+    const sortVal = (b) => (b.ny ? b.ny.level : b['12m'] ? b['12m'].level : -1);
+    const order = [...brokers.entries()].sort((x, y) => sortVal(y[1]) - sortVal(x[1]) || x[0].localeCompare(y[0]));
+    return `<h3 class="mx-title">${esc(title.replace(/[¹²]/, ''))}<sup>${title.includes('¹') ? '¹' : '²'}</sup></h3>
+      <div class="tbl-wrap"><table class="tbl matrix"><thead><tr><th>증권사</th>${cols.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead><tbody>
+      ${order.map(([name, b]) => {
+        const recent = Object.values(b).some((r) => r.recent);
+        return `<tr class="cur"><th rowspan="2">${recent ? '<span class="star">★</span>' : ''}<a href="#${anchor(name)}" class="to-hist">${esc(name)}</a></th>
+          ${cols.map((c) => { const r = b[c.key]; return r ? `<td><b>${esc(short(r))}</b> ${arrow(r)}<span class="mx-date">${md(r.date)}</span></td>` : '<td class="empty-cell">-</td>'; }).join('')}</tr>
+        <tr class="prv">${cols.map((c) => { const r = b[c.key]; const p = r && prevOf(r); return `<td>${p ? `(${p.label ? `${esc(p.label)} ` : ''}${esc(prevShort(p))} · ${md(p.date)})` : ''}</td>`; }).join('')}</tr>`;
+      }).join('')}</tbody></table></div>`;
+  }
+
   // 증권사별 전망 이력: 증권사 하나당 카드, 안에 최신순 타임라인
   function brokersHtml(brokers) {
     if (!brokers?.length) return '';
     const card = (b) => `
-      <details class="broker" open>
+      <details class="broker" open id="${anchor(b.broker)}">
         <summary>
           <b>${esc(b.broker)}</b> <span class="muted">${esc(b.group)} · ${b.count}건</span>
           ${b.ups ? `<span class="chg-상향">↑${b.ups}</span>` : ''}${b.downs ? `<span class="chg-하향">↓${b.downs}</span>` : ''}
@@ -154,7 +230,10 @@
     const showOld = !!state.showOld;
     const shown = snap.filter((r) => showOld || !r.stale);
     const oldCount = snap.filter((r) => r.stale).length;
-    const periods = [...new Set(snap.filter((r) => !r.stale).map((r) => r.period))];
+    const fresh = snap.filter((r) => !r.stale);
+    const cols = columnsOf(fresh);
+    if (!cols.some((c) => c.key === state.tab)) state.tab = (cols.find((c) => c.key === 'ny') || cols[0])?.key;
+    const byCol = (k) => shown.filter((r) => colOf(r).key === k);
     const meta = data.meta || {};
     $('main').innerHTML = `
       ${meta['기준일'] ? `<div class="notice"><strong>기준일 ${esc(meta['기준일'])}</strong>${esc(meta['수집방법'] || '')}</div>` : ''}
@@ -164,14 +243,18 @@
         <h2>코스피와 증권사 전망 <span class="muted">12개월·연말·내년 전망을 제시일에 표시 · 기준이 서로 다름³</span></h2>
         <div id="chart-hist"></div>
       </section>
-      <section class="panel">
-        <h2>기간별 증권사 분포 <span class="muted">점 = 대표값 · 가는 선 = 밴드(외국계는 약세~강세 시나리오) · 주황 세로선 = 현재 코스피</span></h2>
-        <div class="chips" id="period-chips">${periods.map((p, i) => `<button type="button" class="chip${i === 0 ? ' active' : ''}" data-p="${esc(p)}">${esc(p)}</button>`).join('')}</div>
+      <section class="panel" id="compare">
+        <h2>기간별 증권사 비교 <span class="muted">탭을 고르면 분포 차트와 표가 함께 바뀜 · 점 = 대표값 · 가는 선 = 밴드(외국계는 약세~강세 시나리오) · 주황 세로선 = 현재 코스피</span></h2>
+        <div class="chips" id="period-chips">${cols.map((c) => `<button type="button" class="chip${c.key === state.tab ? ' active' : ''}" data-p="${esc(c.key)}">${esc(c.label)} <span class="n">${byCol(c.key).length}</span></button>`).join('')}</div>
         <div id="chart-strip"></div>
+        <div id="compare-table"></div>
+        ${oldCount ? `<label class="toggle"><input type="checkbox" id="show-old"${showOld ? ' checked' : ''}> 오래된 전망도 보기 (${oldCount}건 · 지난 하반기 전망 등)</label>` : ''}
       </section>
-      ${oldCount ? `<label class="toggle"><input type="checkbox" id="show-old"${showOld ? ' checked' : ''}> 오래된 전망도 표에 보기 (${oldCount}건 · 지난 하반기 전망 등)</label>` : ''}
-      <section class="panel"><h2>국내 증권사 <sup>¹</sup> <span class="muted">주로 다음 해 연간 밴드·목표</span></h2>${table(shown.filter((r) => r.group === '국내')) || '<div class="empty">없음</div>'}</section>
-      <section class="panel"><h2>외국계 <sup>²</sup> <span class="muted">주로 발표일부터 12개월 목표 + 시나리오</span></h2>${table(shown.filter((r) => r.group !== '국내')) || '<div class="empty">3개월 안에 나온 전망 없음 · 위 체크박스로 이전 전망 보기</div>'}</section>
+      <section class="panel" id="matrix">
+        <h2>증권사별 한눈에 보기 <span class="muted">칸 위 = 현재 전망 · 발표일, 칸 아래 (괄호) = 같은 기간 직전 전망 · 증권사 이름을 누르면 아래 이력으로 이동</span></h2>
+        ${matrixHtml(fresh.filter((r) => r.group === '국내'), '국내 증권사 ¹')}
+        ${matrixHtml(fresh.filter((r) => r.group !== '국내'), '외국계 ²')}
+      </section>
       ${brokersHtml(data.brokers)}
       ${notesHtml()}
       ${metaHtml(meta)}
@@ -186,14 +269,19 @@
       dotName: '증권사 전망(제시일 기준)',
       height: 300,
     });
-    const drawStrip = (p) => strip($('chart-strip'), snap.filter((r) => r.period === p && !r.stale), last && last[1]);
+    const drawTab = (k) => {
+      const rows = byCol(k).slice().sort((a, b) => b.level - a.level);
+      strip($('chart-strip'), rows, last && last[1]);
+      $('compare-table').innerHTML = compareTable(rows) || '<div class="empty">이 기간의 전망이 없습니다</div>';
+    };
     $('show-old')?.addEventListener('change', (e) => { state.showOld = e.target.checked; render(); });
-    drawStrip(periods[0]);
+    drawTab(state.tab);
     $('period-chips').addEventListener('click', (e) => {
       const b = e.target.closest('[data-p]');
       if (!b) return;
+      state.tab = b.dataset.p;
       $('period-chips').querySelectorAll('.chip').forEach((c) => c.classList.toggle('active', c === b));
-      drawStrip(b.dataset.p);
+      drawTab(state.tab);
     });
   }
 

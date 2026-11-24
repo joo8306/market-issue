@@ -366,3 +366,34 @@ svg .now { stroke: var(--red); }
 .footer summary { color: var(--text-dim); }
 code { background: #F1F3F7; color: var(--navy); border-radius: 4px; }
 @media (max-width: 600px) { .title .title-text { font-size: 25px; } }
+
+/* 전망: 기간별 비교표 · 증권사 한눈에 보기 */
+.to-hist { color: var(--navy); text-decoration: none; font-weight: 600; }
+.to-hist:hover { text-decoration: underline; }
+.tbl.compare td.num b { font-weight: 600; color: var(--navy); }
+.mx-title { font-size: 13px; color: var(--text-dim); margin: 14px 0 4px; font-weight: 600; }
+.tbl.matrix { font-size: 12.5px; }
+.tbl.matrix th, .tbl.matrix td { white-space: nowrap; }
+.tbl.matrix thead th { text-align: left; }
+.tbl.matrix tbody th { position: sticky; left: 0; background: var(--bg); z-index: 1; vertical-align: middle; border-right: 1px solid var(--border); }
+.tbl.matrix tr.cur td { border-bottom: 0; padding-bottom: 1px; }
+.tbl.matrix tr.cur td b { font-weight: 600; color: var(--navy); }
+.tbl.matrix tr.prv td { color: var(--text-faint); font-size: 11.5px; padding-top: 0; }
+.tbl.matrix .mx-date { color: var(--text-faint); font-size: 11px; margin-left: 4px; }
+.tbl.matrix .empty-cell { color: var(--border); }
+#compare .toggle { margin-top: 4px; }
+.tag-diff { font-size: 10.5px; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); white-space: nowrap; }
+@media (max-width: 600px) {
+  /* 기간별 비교표: 휴대폰에서는 증권사별 카드 */
+  .tbl.compare thead { display: none; }
+  .tbl.compare tr { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 2px; border-bottom: 1px solid var(--border); }
+  .tbl.compare th, .tbl.compare td { display: block; border: 0; padding: 0; text-align: left; white-space: normal; min-width: 0; }
+  .tbl.compare tbody th { grid-column: 1; }
+  .tbl.compare td.num:nth-of-type(1) { grid-column: 1 / -1; order: 2; }
+  .tbl.compare td.num:nth-of-type(2) { grid-column: 2; grid-row: 1; text-align: right; }
+  .tbl.compare td:nth-of-type(3) { grid-column: 2; grid-row: 2; text-align: right; font-size: 12px; }
+  .tbl.compare td.prev { grid-column: 1 / -1; order: 3; color: var(--text-faint); }
+  .tbl.compare td.prev::before { content: "직전 "; }
+  .tbl.compare td.note { grid-column: 1 / -1; order: 4; }
+  .tbl.compare td:last-child { grid-column: 1 / -1; order: 5; font-size: 12px; }
+}

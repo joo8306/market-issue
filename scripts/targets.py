@@ -293,7 +293,7 @@ def broker_timelines(recs, today):
         out.append({
             "broker": broker, "group": items[0]["group"], "latest_date": items[0]["date"],
             "count": len(items), "ups": ups, "downs": downs,
-            "items": [{k: i[k] for k in ("date", "date_kind", "period", "basis", "text", "level", "target", "low",
+            "items": [{k: i[k] for k in ("date", "date_kind", "period", "horizon", "basis", "text", "level", "target", "low",
                                          "high", "change", "change_note", "prev", "reason", "source", "link")}
                       for i in items],
         })
@@ -318,6 +318,7 @@ def build_payload(rows, kospi_history=None, today=None, meta=None):
             "basis": r.get("기준", ""),
         }
         rec["level"] = level(rec)
+        rec["horizon"] = horizon_tag(rec)
         if rec["level"] is None:
             continue
         recs.append(rec)
