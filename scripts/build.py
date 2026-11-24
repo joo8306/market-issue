@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
@@ -120,8 +121,13 @@ def parse_time(entry, region="GLOBAL", now=None):
     return None
 
 
+def safe_url(url):
+    """한글 검색어 등 ASCII 가 아닌 글자를 %인코딩 (그대로 두면 'ascii' codec 오류로 수집 실패)"""
+    return urllib.parse.quote(url, safe="%/:=&?~#+!$,;'@()*[]")
+
+
 def fetch_feed(url):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Cache-Control": "no-cache"})
+    req = urllib.request.Request(safe_url(url), headers={"User-Agent": UA, "Cache-Control": "no-cache"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = resp.read()
     return feedparser.parse(data)

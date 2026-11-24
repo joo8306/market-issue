@@ -180,7 +180,7 @@
   function brokersHtml(brokers) {
     if (!brokers?.length) return '';
     const card = (b) => `
-      <details class="broker" open id="${anchor(b.broker)}">
+      <details class="broker" id="${anchor(b.broker)}">
         <summary>
           <b>${esc(b.broker)}</b> <span class="muted">${esc(b.group)} · ${b.count}건</span>
           ${b.ups ? `<span class="chg-상향">↑${b.ups}</span>` : ''}${b.downs ? `<span class="chg-하향">↓${b.downs}</span>` : ''}
@@ -199,7 +199,7 @@
           </li>`).join('')}
         </ol>
       </details>`;
-    return `<section class="panel" id="history"><h2>증권사별 전망 이력 <span class="muted">최신순 · 상향/하향은 같은 기간 전망끼리만 비교³</span></h2>
+    return `<section class="panel" id="history"><h2>증권사별 전망 이력 <span class="muted">증권사를 누르면 펼쳐짐 · 최신순 · 상향/하향은 같은 기준끼리 비교³</span></h2>
       <div class="brokers">${brokers.map(card).join('')}</div></section>`;
   }
 
@@ -303,6 +303,16 @@
       $('compare-table').innerHTML = compareTable(rows) || '<div class="empty">이 기간의 전망이 없습니다</div>';
     };
     $('show-old')?.addEventListener('change', (e) => { state.showOld = e.target.checked; render(); });
+    // 표에서 증권사 이름을 누르면 아래 이력 카드를 펼치고 그 위치로 이동
+    $('main').addEventListener('click', (e) => {
+      const a = e.target.closest('a.to-hist');
+      if (!a) return;
+      const card = document.getElementById(a.getAttribute('href').slice(1));
+      if (!card) return;
+      e.preventDefault();
+      card.open = true;
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     drawTab(state.tab);
     $('period-chips').addEventListener('click', (e) => {
       const b = e.target.closest('[data-p]');

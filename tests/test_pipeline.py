@@ -108,6 +108,22 @@ class PipelineTest(unittest.TestCase):
             self.assertTrue((out / "icons" / "icon-192.png").exists())
 
 
+class FeedUrlTest(unittest.TestCase):
+    def test_korean_query_is_encoded(self):
+        import config
+        url = config.FEEDS["구글뉴스 증시"][0]
+        safe = build.safe_url(url)
+        safe.encode("ascii")  # 한글이 남아 있으면 여기서 오류
+        self.assertIn("%EC%BD%94%EC%8A%A4%ED%94%BC", safe)  # '코스피'
+        self.assertIn("+OR+", safe)
+        self.assertEqual(build.safe_url("https://x.com/a?b=1&c=%22d%22"), "https://x.com/a?b=1&c=%22d%22")  # 이미 인코딩된 건 그대로
+
+    def test_dead_feeds_removed(self):
+        import config
+        for name in ("Yahoo Finance", "MarketWatch Pulse", "WSJ Markets", "한경 증권"):
+            self.assertNotIn(name, config.FEEDS)
+
+
 class NewsTimeTest(unittest.TestCase):
     def entry(self, s):
         f = feedparser.parse(f"<rss><channel><item><title>t</title><pubDate>{s}</pubDate></item></channel></rss>")
