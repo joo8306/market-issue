@@ -26,6 +26,17 @@
     ${r.basis ? `<span class="muted">${esc(r.basis)}</span><br>` : ''}
     <span class="muted">${esc(r.date)}${r.date_kind === '보도일' ? ' (보도일)' : ''}</span>${r.reason ? `<br>${esc(r.reason)}` : ''}`;
 
+  // 요약 카드: 비교 탭과 같은 기준(2027년·12개월·분기별·단기 하단)으로 중간값
+  function rangesOf(rows) {
+    const out = [];
+    columnsOf(rows).filter((c) => c.key !== 'lt').forEach((c) => {
+      const v = rows.filter((r) => colOf(r).key === c.key).map((r) => r.level).sort((a, b) => a - b);
+      if (!v.length) return;
+      const mid = Math.floor(v.length / 2);
+      out.push({ period: c.label, count: v.length, min: v[0], max: v[v.length - 1], median: v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2 });
+    });
+    return out;
+  }
   function tiles(ranges, kospiLast) {
     if (!ranges.length) return '';
     return `<div class="cards">${ranges.map((r) => {
@@ -74,8 +85,7 @@
         <td class="num" title="${esc(r.text)}">${esc(r.text || levelText(r))}</td>
         <td class="num">${md(r.date)}${r.date_kind === '보도일' ? '<span class="muted"> 보도</span>' : ''}${r.stale ? '<span class="muted"> (오래됨)</span>' : ''}</td>
         <td class="chg-${esc(r.change)}">${esc(CHANGE[r.change] || r.change || '')}</td>
-        <td class="prev">${r.prev ? `${esc(r.prev.text)}<div class="basis">${md(r.prev.date)} → 현재 ${fmt(r.level, 0)}</div>`
-          : r.change_note && r.change_note.length > 2 ? `<span class="muted">${esc(r.change_note)}</span>` : '<span class="muted">-</span>'}</td>
+        <td class="prev">${r.prev ? `${r.prev.cross ? `<span class="tag-diff">${esc(r.prev.label)}</span> ` : ''}${esc(r.prev.text)}<div class="basis">${md(r.prev.date)}${r.prev.cross ? ' · 기준 다름' : ''}</div>` : '<span class="muted">-</span>'}</td>
         <td class="note">${esc(r.reason)}</td>
         <td>${r.link ? `<a href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.source || '링크')}</a>` : esc(r.source)}</td>
       </tr>`).join('')}</tbody></table></div>`;
@@ -106,17 +116,11 @@
   const prevShort = (p) => (p.text.length > 26 ? `${p.text.slice(0, 26)}…` : p.text);
   const arrow = (r) => ({ 상향: '<span class="chg-상향">↑</span>', 하향: '<span class="chg-하향">↓</span>', 유지: '<span class="muted">→</span>' }[r.change] || '');
   const anchor = (b) => `b-${encodeURIComponent(b)}`;
-  // 같은 기간의 직전 전망이 없을 때(2027년·12개월 칸), 그 증권사의 바로 앞 중장기 전망을 '기준 다름'으로 보여 줌
-  const LONGISH = ['내년', '연말', '6개월', '12개월', '기간 미상'];
+  // 직전 전망: 같은 기준이면 그대로, 기준이 다르면(예: 4분기 밴드 ↔ 연말 목표) 꼬리표를 붙이고 상단끼리 비교
   function prevOf(r) {
-    if (r.prev) return { ...r.prev, label: '' };
-    if (!['내년', '12개월'].includes(r.period)) return null;
-    const b = (data.brokers || []).find((x) => x.broker === r.broker);
-    const it = b?.items.find((i) => i.date < r.date && LONGISH.includes(i.period));
-    if (!it) return null;
-    const label = colOf(it).key === 'lt' ? '중장기' : colOf(it).label;
-    const text = it.text.replace(/^(하반기|상반기|연말)\s*/, '');  // '26년 하반기 하반기 상단' 같은 중복 제거
-    return { text, date: it.date, label };
+    if (!r.prev) return null;
+    const text = r.prev.text.replace(/^(하반기|상반기|연말)\s*/, '');  // '26년 하반기 하반기 상단' 같은 중복 제거
+    return { ...r.prev, text, label: r.prev.cross ? r.prev.label : '' };
   }
 
   // 안 B: 탭으로 고른 기간의 증권사 비교표 (근거·출처 포함)
@@ -128,7 +132,7 @@
         <td class="num"><b class="big">${repr(r)}</b> ${arrow(r)}<div class="sub">${esc(r.text && r.text !== fmt(r.level, 0) ? r.text : bandOf(r))}</div>${r.basis ? `<div class="basis">${esc(r.basis)}</div>` : ''}</td>
         <td class="num">${md(r.date)}${r.date_kind === '보도일' ? '<span class="muted"> 보도</span>' : ''}${r.stale ? '<span class="muted"> (오래됨)</span>' : ''}</td>
         <td class="num vs">${vsNow(r.level)}</td>
-        <td class="prev">${(() => { const p = prevOf(r); return p ? `${p.label ? `<span class="tag-diff">${esc(p.label)}</span> ` : ''}${esc(p.text)}<div class="basis">${md(p.date)}${p.label ? ' · 기준 다름' : ''}</div>` : '<span class="muted">-</span>'; })()}</td>
+        <td class="prev">${(() => { const p = prevOf(r); return p ? `${p.label ? `<span class="tag-diff">${esc(p.label)}</span> ` : ''}${esc(p.text)}<div class="basis">${md(p.date)}${p.label ? ' · 기준 다름, 상단끼리 비교' : ''}</div>` : '<span class="muted">-</span>'; })()}</td>
         <td class="note">${esc(r.reason)}</td>
         <td>${r.link ? `<a href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.source || '링크')}</a>` : esc(r.source)}</td>
       </tr>`).join('')}</tbody></table></div>`;
@@ -168,7 +172,7 @@
             const q = c.key === 'q' ? `<span class="mx-q">${qShort(r.horizon)}</span> ` : '';
             const band = bandOf(r);
             return `<td>${q}<b>${repr(r)}</b> ${arrow(r)}${band ? ` <span class="mx-band">${band}</span>` : ''}<span class="mx-date">${md(r.date)}</span></td>`; }).join('')}</tr>
-        <tr class="prv">${cols.map((c) => { const r = b[c.key]; const p = r && prevOf(r); return `<td>${p ? `(${p.label ? `${esc(p.label)} ` : ''}${esc(prevShort(p))} · ${md(p.date)})` : ''}</td>`; }).join('')}</tr>`;
+        <tr class="prv">${cols.map((c) => { const r = b[c.key]; const p = r && prevOf(r); return `<td>${p ? `(${p.label ? `${esc(p.label)} ` : ''}${esc(prevShort(p))} · ${md(p.date)}${p.label ? ', 상단 비교' : ''})` : ''}</td>`; }).join('')}</tr>`;
       }).join('')}</tbody></table></div>`;
   }
 
@@ -187,7 +191,7 @@
             <span class="tl-body">
               <span class="tl-head"><span class="tl-period">${esc(i.period)}</span> <b>${esc(i.text)}</b>
                 <span class="chg-${esc(i.change)}">${esc(CHANGE[i.change] || '')}</span>
-                ${i.prev ? `<span class="muted">(직전 ${esc(i.prev.text)})</span>` : ''}</span>
+                ${i.prev ? `<span class="muted">(직전 ${i.prev.cross ? `${esc(i.prev.label)} ` : ''}${esc(i.prev.text)}${i.prev.cross ? ', 상단 비교' : ''})</span>` : ''}</span>
               ${i.basis ? `<span class="basis">${esc(i.basis)}</span>` : ''}
               ${i.reason ? `<span class="tl-reason">${esc(i.reason)}</span>` : ''}
               ${i.link ? `<a class="tl-src" href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.source || '출처')}</a>` : ''}
@@ -211,7 +215,8 @@
         같은 '내년 목표'라도 산출 방식(연간 목표, 12개월 선행 PER 등)이 달라 기준 칸에 함께 적었습니다.</li>
       <li value="4"><b>대표값</b> = 목표치, 목표 없이 밴드만 있으면 밴드 중간값입니다(화면에 ≈ 표시). 외국계는 밴드 대신 약세~강세 시나리오 범위를 적고, 대표값은 기본 시나리오입니다.</li>
       <li value="5"><b>제시일</b>: '보고서' = 보고서 발표일, '보도' = 보고서 날짜를 확인하지 못해 가장 이른 기사 날짜를 쓴 경우입니다.
-        오래된 전망은 (오래됨)으로 표시하고 표 기본 화면과 기간별 중간값에서 뺍니다. 기준은 전망 기간에 따라 단기 2주, 월간 1개월, 분기·3개월·6개월 2개월, 그 밖에는 3개월입니다. 6개월 넘으면 최신 목록에서 빼고 이력에만 남깁니다. <b>NEW</b> = 최근 7일 안에 새로 나오거나 바뀐 전망. <b>현재 대비</b> = 대표값 ÷ 현재 코스피(시황 화면과 같은 값, 장중 5분마다 갱신) − 1.</li>
+        오래된 전망은 (오래됨)으로 표시하고 표 기본 화면과 기간별 중간값에서 뺍니다. 기준은 전망 기간에 따라 단기 2주, 월간 1개월, 분기·3개월·6개월 2개월, 그 밖에는 3개월입니다. 6개월 넘으면 최신 목록에서 빼고 이력에만 남깁니다. <b>NEW</b> = 최근 7일 안에 새로 나오거나 바뀐 전망.
+        <b>직전 전망</b>: 같은 기간·같은 분기(해)의 바로 앞 전망. 올해 안을 가리키는 전망(분기·반기·연말)은 같은 기준이 없으면 가리키는 시점이 겹치는 이전 전망(예: 26년 4분기 ↔ 26년 연말 목표·하반기 밴드)을 '기준 다름'으로 쓰고 상단끼리 비교합니다. 2027년·12개월은 같은 기준끼리만 비교해서, 처음 나온 2027년 전망은 '신규'입니다. <b>현재 대비</b> = 대표값 ÷ 현재 코스피(시황 화면과 같은 값, 장중 5분마다 갱신) − 1.</li>
     </ol></details>`;
   }
 
@@ -260,7 +265,7 @@
     $('main').innerHTML = `
       ${meta['기준일'] ? `<div class="notice"><strong>기준일 ${esc(meta['기준일'])}</strong>${esc(meta['수집방법'] || '')}</div>` : ''}
       <div class="tile-note muted">기간별 중간값 · 오래된 전망 제외<sup>⁵</sup> · 국내 '내년'과 외국계 '12개월'은 기준이 다릅니다<sup>¹²³</sup></div>
-      ${tiles(data.ranges || [], kospiNow())}
+      ${tiles(rangesOf(fresh), kospiNow())}
       <section class="panel" id="compare">
         <h2>기간별 증권사 비교 <span class="muted">탭을 고르면 분포 차트와 표가 함께 바뀜 · 점 = 대표값 · 가는 선 = 밴드(외국계는 약세~강세 시나리오) · 주황 세로선 = 현재 코스피</span></h2>
         <div class="chips" id="period-chips">${cols.map((c) => `<button type="button" class="chip${c.key === state.tab ? ' active' : ''}" data-p="${esc(c.key)}">${esc(c.label)} <span class="n">${byCol(c.key).length}</span></button>`).join('')}</div>
@@ -269,7 +274,7 @@
         ${oldCount ? `<label class="toggle"><input type="checkbox" id="show-old"${showOld ? ' checked' : ''}> 오래된 전망도 보기 (${oldCount}건 · 지난 하반기 전망 등)</label>` : ''}
       </section>
       <section class="panel" id="matrix">
-        <h2>증권사별 한눈에 보기 <span class="muted">굵은 글씨 = 대표값(≈ = 밴드 중간값), 회색 = 밴드·발표일, 아랫줄 (괄호) = 직전 전망 · 증권사 이름을 누르면 아래 이력으로 이동</span></h2>
+        <h2>증권사별 한눈에 보기 <span class="muted">굵은 글씨 = 대표값(≈ = 밴드 중간값), 회색 = 밴드·발표일, 아랫줄 (괄호) = 직전 전망 · ↑↓ = 직전 대비 · 증권사 이름을 누르면 아래 이력으로 이동</span></h2>
         ${matrixHtml(fresh.filter((r) => r.group === '국내'), '국내 증권사 ¹')}
         ${matrixHtml(fresh.filter((r) => r.group !== '국내'), '외국계 ²')}
       </section>

@@ -266,18 +266,54 @@ def horizon_tag(rec):
     return str(year)
 
 
-def change_of(rec):
-    p = rec.get("prev")
-    if p is None:
-        note = rec.get("change_note") or ""
-        return ("상향" if "↑" in note or "상향" in note else
-                "하향" if "↓" in note or "하향" in note else
-                "유지" if "→" in note or "유지" in note else "신규")
-    if rec["level"] > p["level"]:
-        return "상향"
-    if rec["level"] < p["level"]:
-        return "하향"
-    return "유지"
+THIS_YEAR = ("분기", "월간", "6개월", "연말")
+
+
+def window_of(rec):
+    """전망이 가리키는 기간 (시작월, 끝월) — 'YYYY-MM' 문자열"""
+    h = rec.get("horizon") or ""
+    m = re.match(r"(\d{4})-([1-4])Q$", h)
+    if m:
+        y, q = int(m.group(1)), int(m.group(2))
+        return f"{y}-{3 * q - 2:02d}", f"{y}-{3 * q:02d}"
+    m = re.match(r"(\d{4})-H([12])$", h)
+    if m:
+        y = int(m.group(1))
+        return (f"{y}-01", f"{y}-06") if m.group(2) == "1" else (f"{y}-07", f"{y}-12")
+    m = re.match(r"(\d{4})-(\d{2})$", h)
+    if m:
+        return h, h
+    if re.match(r"\d{4}$", h):  # 연말·연간 상단 → 그 해 전체
+        return f"{h}-01", f"{h}-12"
+    return None
+
+
+def overlaps(a, b):
+    return bool(a and b and a[0] <= b[1] and b[0] <= a[1])
+
+
+def period_label(rec):
+    h = rec.get("horizon") or ""
+    m = re.match(r"\d{2}(\d{2})-([1-4])Q$", h)
+    if m:
+        return f"{m.group(1)}년 {m.group(2)}분기"
+    m = re.match(r"\d{2}(\d{2})-H([12])$", h)
+    if m:
+        return f"{m.group(1)}년 {'상' if m.group(2) == '1' else '하'}반기"
+    if rec["period"] == "연말" and h:
+        return f"{h[2:]}년 연말·연간"
+    return rec["period"]
+
+
+def upper(rec):
+    return rec["high"] if rec.get("high") is not None else rec["level"]
+
+
+def change_of(rec, prev=None, cross=False):
+    if prev is None:
+        return "신규"
+    a, b = (upper(rec), upper(prev)) if cross else (rec["level"], prev["level"])
+    return "상향" if a > b else "하향" if a < b else "유지"
 
 
 def broker_timelines(recs, today):
@@ -323,20 +359,31 @@ def build_payload(rows, kospi_history=None, today=None, meta=None):
             continue
         recs.append(rec)
 
-    # 기록마다 같은 증권사·같은 기간의 직전 전망과 비교해 상향/하향 판정
-    # (기간이 다르면 기준이 달라 비교하지 않음 → 직전값이 없으면 기록된 '변경' 메모를 사용)
-    last = {}
-    for rec in sorted(recs, key=lambda x: x["date"]):
-        key = (rec["broker"], rec["period"], horizon_tag(rec))
-        prev = last.get(key) if rec["period"] != "기간 미상" else None  # 기간을 모르면 비교할 수 없음
-        if prev and prev["date"] == rec["date"]:
-            prev = prev.get("prev_rec")
-        rec["prev_rec"] = prev
-        rec["prev"] = ({"level": prev["level"], "date": prev["date"], "text": prev["text"]} if prev else None)
-        rec["change"] = change_of(rec)
-        last[key] = rec
-    for rec in recs:
-        rec.pop("prev_rec", None)
+    # 직전 전망 찾기
+    # ① 같은 증권사·같은 기간·같은 분기/해의 바로 앞 전망 (같은 기준 → 대표값끼리 비교)
+    # ② 없고, 올해 안을 가리키는 전망(분기·월간·반기·연말)이면 가리키는 시점이 겹치는 바로 앞 전망
+    #    (예: 26년 4분기 밴드 ↔ 26년 연말 목표·하반기 밴드) → 기준이 달라 상단끼리 비교, '기준 다름' 표시
+    # 2027년·12개월·3개월·단기는 ①만 (2027년은 처음 나온 전망이면 '신규')
+    ordered = sorted(recs, key=lambda x: x["date"])
+    for i, rec in enumerate(ordered):
+        earlier = [o for o in ordered[:i] if o["broker"] == rec["broker"] and o["date"] < rec["date"]]
+        same = [o for o in earlier if o["period"] == rec["period"] and o["horizon"] == rec["horizon"]
+                and rec["period"] != "기간 미상"]
+        prev, cross = (same[-1], False) if same else (None, False)
+        if prev is None and rec["period"] in THIS_YEAR:
+            w = window_of(rec)
+            over = [o for o in earlier if o["period"] in THIS_YEAR and overlaps(w, window_of(o))]
+            if over:
+                prev, cross = over[-1], True
+        rec["prev"] = None
+        if prev:
+            rec["prev"] = {"level": prev["level"], "date": prev["date"], "text": prev["text"],
+                           "period": prev["period"], "horizon": prev["horizon"], "cross": cross,
+                           "label": period_label(prev) if cross else ""}
+        rec["change"] = change_of(rec, prev, cross)
+    last = {}  # 증권사·기간·분기(해)별 최신 전망
+    for rec in ordered:
+        last[(rec["broker"], rec["period"], rec["horizon"])] = rec
 
     snapshot = []
     for rec in last.values():
