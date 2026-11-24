@@ -267,25 +267,3 @@ def fill_from_samples(series, samples):
                 s["prev"] = day[-2][1]
     return series
 
-
-# ===== 장중 투자자별 누적 순매수 기록 (네이버는 시간대별 자료가 없어 실행마다 기록) =====
-def update_flow_samples(path, kr, now_ts):
-    """kr = fetch_kr_market 결과 → {지수: {"date", "points": [[ts, 외국인, 기관, 개인]...]}} (그날 것만)"""
-    try:
-        flows = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        flows = {}
-    for code, ix in ((kr or {}).get("indices") or {}).items():
-        inv = ix.get("investors") or {}
-        if not inv or ix.get("date") is None:
-            continue
-        rec = flows.get(code)
-        if not rec or rec.get("date") != ix["date"]:
-            rec = {"date": ix["date"], "points": []}
-        row = [now_ts, inv.get("외국인"), inv.get("기관"), inv.get("개인")]
-        if not rec["points"] or rec["points"][-1][1:] != row[1:]:
-            rec["points"].append(row)
-        flows[code] = rec
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(flows, ensure_ascii=False), encoding="utf-8")
-    return flows

@@ -102,10 +102,7 @@ def build_extras(out_dir, state_dir=STATE_DIR, now=None, sources=SOURCES, target
             samples = charts.update_samples(state_dir / "intraday_samples.json",
                                             charts.current_values(ov, got.get("overnight")), now_ts)
             charts.fill_from_samples(series, samples)
-        flows = {}
-        if "market_kr" in sources and kr:
-            flows = charts.update_flow_samples(state_dir / "flow_samples.json", kr, now_ts)
-        _write(out_dir / "charts.json", {"generated_ts": now_ts, "series": series, "flows": flows})
+        _write(out_dir / "charts.json", {"generated_ts": now_ts, "series": series})
     except Exception as e:
         print(f"  charts: 실패 ({str(e)[:100]})")
 

@@ -1,11 +1,10 @@
 // 시황 화면: 국내 마감시황 · 해외시황 데이터 + 시황문자 초안
 (() => {
   'use strict';
-  const { esc, fmt, pct, signed, dirClass, fmtTs, relTime, loadJson, copyText, sparkSvg, seriesChart, multiLineChart } = window.MI;
+  const { esc, fmt, pct, signed, dirClass, fmtTs, relTime, loadJson, copyText, sparkSvg, seriesChart } = window.MI;
   const $ = (id) => document.getElementById(id);
   let data = null;
   let charts = {};                 // charts.json: {키: {intra, prev, day, sampled}}
-  let flows = {};                  // 장중 투자자별 누적 순매수 기록 {KOSPI: {date, points: [[ts, 외국인, 기관, 개인]]}}
   const openCharts = new Map();    // 펼쳐 둔 그래프: 키 → 'intra' | 'day' (새로고침 후에도 유지)
 
   // ---------- 그래프 ----------
@@ -114,34 +113,6 @@
           <dt>거래대금</dt><dd>${fmt(ix.value_eok, 0)}억</dd>
         </dl>
       </div>`;
-  }
-
-  // 장중 투자자별 누적 순매수 추이 (5분마다 기록, 억원)
-  function flowsHtml(kr) {
-    const codes = ['KOSPI', 'KOSDAQ'].filter((c) => flows[c]?.points?.length && flows[c].date === kr.indices?.[c]?.date);
-    if (!codes.length) return '';
-    return `<div class="flows">${codes.map((c) => `
-      <div class="flow-box"><div class="flow-title">${c} 투자자별 순매수 <span class="muted">장중 누적 · 억원 · 5분마다 기록</span></div>
-        <div class="flow-chart" data-flow="${c}"></div></div>`).join('')}</div>`;
-  }
-  function drawFlows() {
-    document.querySelectorAll('[data-flow]').forEach((el) => {
-      const pts = flows[el.dataset.flow]?.points || [];
-      const line = (i) => pts.filter((p) => p[i] != null).map((p) => [p[0], p[i]]);
-      multiLineChart(el, [
-        { name: '외국인', cls: 'f-for', pts: line(1) }, { name: '기관', cls: 'f-inst', pts: line(2) }, { name: '개인', cls: 'f-ind', pts: line(3) },
-      ], { unit: '억' });
-    });
-  }
-
-  // 업종 등락 상·하위 5
-  function sectorsHtml(list) {
-    if (!list?.length) return '';
-    const row = (s) => `<tr><th>${esc(s.name)}</th><td class="num ${dirClass(s.pct)}">${pct(s.pct)}</td><td class="num muted">${fmt(s.rise, 0)}↑ ${fmt(s.fall, 0)}↓</td></tr>`;
-    return `<div class="grid-tables sectors">
-      <table class="tbl"><thead><tr><th>업종 상위 <span class="muted">네이버 업종·NXT 반영 가능</span></th><th class="num">등락률</th><th class="num">상승·하락</th></tr></thead><tbody>${list.slice(0, 5).map(row).join('')}</tbody></table>
-      <table class="tbl"><thead><tr><th>업종 하위 <span class="muted">네이버 업종·NXT 반영 가능</span></th><th class="num">등락률</th><th class="num">상승·하락</th></tr></thead><tbody>${list.slice(-5).reverse().map(row).join('')}</tbody></table>
-    </div>`;
   }
 
   function moversHtml(list) {
@@ -260,7 +231,7 @@
           <li><b>코스피200 야간선물(KRX 야간시장)</b>은 무료 공개 시세가 없어 아직 넣지 않았습니다. 위의 무기한 코스피200(KR200)으로 대신 참고하세요.</li>
           <li><b>삼성전자 GDR</b>: 런던 상장, 1 GDR = 보통주 25주. 주당 원화 환산값을 국내 종가와 비교합니다.</li>
           <li>미국 선물·종목은 네이버 해외 시세(일부 지연 가능), 삼성전자 GDR은 야후 시세입니다. 앱은 약 5분마다 갱신합니다.</li>
-          <li><b>신선도</b>: 이름 아래 'n분 전'은 그 값의 체결 시각, '10분 지연'은 출처의 지연입니다. 장중인데 30분 넘게 그대로면 ⚠ 표시가 붙습니다. 미니 그래프의 '기록'은 야후 분봉 대신 5분마다 기록한 값으로 그렸다는 뜻입니다.</li>
+          <li><b>신선도</b>: 이름 아래 'n분 전' = 지금 화면을 보는 시각 − 출처가 준 그 가격의 체결 시각입니다(출처 지연 + 5분 자동 실행 간격이 모두 포함). '10분 지연'은 출처가 밝힌 지연입니다. 장중인데 30분 넘게 그대로면 ⚠ 표시가 붙습니다. 미니 그래프의 '기록'은 야후 분봉 대신 5분마다 기록한 값으로 그렸다는 뜻입니다.</li>
           <li><b>그래프</b>: 줄을 누르면 당일·1개월 그래프가 펼쳐집니다. 당일 흐름은 국내 = 네이버 분봉, 해외 = 야후 5분봉(막히면 5분마다 기록한 값), 무기한 선물 = 하이퍼리퀴드 5분봉(최근 24시간)입니다.</li>
         </ol></details>
       </section>`;
@@ -280,16 +251,12 @@
       <section class="panel">
         <h2>국내 마감시황</h2>
         <div class="cards idx">${indexCard(kr.indices?.KOSPI)}${indexCard(kr.indices?.KOSDAQ)}</div>
-        ${flowsHtml(kr)}
-        ${sectorsHtml(kr.sectors)}
         ${draftHtml(data.drafts?.closing, 'copy-closing')}
         <details><summary>확인표 · 시총 상위</summary>${checksHtml(data.drafts?.closing)}${moversHtml(kr.top_mcap?.KOSPI)}</details>
         <details class="foot-notes"><summary>기준·주의 (KRX / 넥스트레이드)</summary><ol class="notes">
           <li><b>지수·지수 그래프</b>: KRX 기준입니다. 코스피·코스닥 지수는 KRX 체결가로만 산출되며 넥스트레이드(NXT) 거래는 반영되지 않습니다. 당일 그래프도 15:30 정규장 마감까지입니다.</li>
-          <li><b>투자자별 순매수(장중 추이 포함)</b>: 네이버가 제공하는 KRX 시장 투자자별 매매동향 값입니다. NXT 거래는 포함되지 않는 것으로 판단되나, 네이버가 기준을 명시하지 않아 확인이 필요합니다. 장중 추이는 앱이 5분마다 기록한 누적값입니다.</li>
-          <li><b>업종 등락 상·하위</b>: 네이버 자체 업종 분류·계산(KRX 업종지수와 다름)입니다. 구성 종목 시세가 NXT 애프터마켓(~20:00) 이후 시각으로 갱신되므로 <b>15:30 이후에는 NXT 가격이 반영될 수 있습니다</b>. 마감시황 문자에는 KRX 종가 기준으로 확인해 쓰세요.</li>
-          <li><b>시총 상위</b>: 업종 등락과 같은 네이버 시세라, 장 마감 후에는 NXT 가격이 반영될 수 있습니다.</li>
-          <li><b>마감시황 초안</b>: 지수·등락률·수급은 위 KRX 기준 값으로 만듭니다.</li>
+          <li><b>시총 상위</b>: 네이버 시세라 15:30 이후에는 NXT 애프터마켓 가격이 반영될 수 있습니다.</li>
+          <li><b>마감시황 초안</b>: 지수·등락률은 KRX 기준이며, 투자자별 수급은 네이버가 제공하는 KRX 시장 값입니다.</li>
         </ol></details>
       </section>`;
     const overnight = `
@@ -307,7 +274,6 @@
     const body = hour < 12 ? overnight + closing : closing + overnight;
     $('main').innerHTML = nightFirst ? night + body : body + night;
     reopenCharts();
-    drawFlows();
   }
 
   async function refresh() {
@@ -317,7 +283,6 @@
       const [d, c] = await Promise.all([loadJson('market.json'), loadJson('charts.json').catch(() => null)]);
       data = d;
       charts = c?.series || charts;
-      flows = c?.flows || flows;
       render();
     } catch (e) {
       $('main').innerHTML = `<div class="empty">데이터를 불러오지 못했습니다 (${esc(e.message)})</div>`;
