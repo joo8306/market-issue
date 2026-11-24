@@ -448,3 +448,30 @@ svg .ln.s2 { stroke: var(--gold); } .key.line.s2 { background: var(--gold); }
 .tbl .live { font-size: 10px; color: var(--red); font-weight: 600; }
 .foot-notes { margin-top: 6px; }
 .grid-tables > table { align-self: start; }
+
+/* 시세 그래프 */
+.chartable { cursor: pointer; }
+.chartable:hover > * { background: var(--bg-hover); }
+tr.chartable.open > * { background: color-mix(in srgb, var(--gold) 10%, transparent); }
+.card.chartable.open { border-color: var(--gold); }
+.spark-cell { width: 64px; padding-top: 4px !important; padding-bottom: 0 !important; }
+svg.spark path { fill: none; stroke-width: 1.4; }
+svg.spark.up path { stroke: var(--red); } svg.spark.down path { stroke: var(--navy-2); } svg.spark.flat path { stroke: var(--text-faint); }
+svg.spark .spark-base { stroke: var(--border); stroke-dasharray: 2 2; }
+.card-spark { display: block; margin-top: 4px; }
+.chart-row > td { background: var(--bg-card); padding: 8px 4px 10px !important; white-space: normal; }
+.chart-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin: -4px 0 14px; }
+.chart-tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; margin-bottom: 6px; }
+.chart-tabs .seg button { padding: 3px 10px; font-size: 12px; }
+svg .ln.big { fill: none; stroke-width: 1.8; }
+svg .ln.big.up { stroke: var(--red); } svg .ln.big.down { stroke: var(--navy-2); } svg .ln.big.flat { stroke: var(--text-dim); }
+svg .end.up { fill: var(--red); } svg .end.down { fill: var(--navy-2); } svg .end.flat { fill: var(--text-dim); }
+svg .prev-line { stroke: var(--text-faint); stroke-dasharray: 4 3; }
+/* 그래프 칸이 들어간 시황 표: 칸 최소 폭을 넓혀 겹치지 않게 */
+#main .grid-tables { grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); }
+#main .grid-tables > table { min-width: 0; }
+.chart-sticky { position: sticky; left: 4px; }
+@media (max-width: 600px) {
+  /* 좁은 화면: 칸이 많은 표는 표 안에서만 옆으로 밀기 (페이지 전체가 밀리지 않게) */
+  #main .grid-tables > table { display: block; overflow-x: auto; }
+}

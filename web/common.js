@@ -182,5 +182,73 @@
       </div>`).join('')}</div>`;
   }
 
-  window.MI = { esc, fmt, pct, signed, dirClass, compact, fmtTs, relTime, loadJson, copyText, showTip, hideTip, timeChart, barList, niceTicks };
+  // ---------- 미니 그래프 (당일 흐름) ----------
+  // pts: [[x, v]...], prev: 전일 종가(기준선, 색 판단)
+  function sparkSvg(pts, prev, { w = 72, h = 22 } = {}) {
+    if (!pts || pts.length < 2) return '<span class="muted">-</span>';
+    const vs = pts.map((p) => p[1]).concat(prev != null ? [prev] : []);
+    const lo = Math.min(...vs); const hi = Math.max(...vs); const span = hi - lo || 1;
+    const x0 = pts[0][0]; const x1 = pts[pts.length - 1][0]; const xs = x1 - x0 || 1;
+    const X = (x) => ((x - x0) / xs) * (w - 2) + 1;
+    const Y = (v) => h - 2 - ((v - lo) / span) * (h - 4);
+    const last = pts[pts.length - 1][1];
+    const ref = prev != null ? prev : pts[0][1];
+    const cls = last > ref ? 'up' : last < ref ? 'down' : 'flat';
+    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+    const base = prev != null ? `<line class="spark-base" x1="0" x2="${w}" y1="${Y(prev).toFixed(1)}" y2="${Y(prev).toFixed(1)}"/>` : '';
+    return `<svg class="spark ${cls}" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">${base}<path d="${d}"/></svg>`;
+  }
+
+  // ---------- 큰 그래프 (당일 = 시각 축 / 1개월 = 날짜 축) ----------
+  const kstTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false });
+  const kstDayTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+  function seriesChart(el, pts, { mode = 'intra', prev = null, height = 200, digits = 2, name = '' } = {}) {
+    if (!pts || pts.length < 2) { el.innerHTML = '<div class="empty">표시할 데이터가 없습니다</div>'; return; }
+    const W = Math.max(300, el.clientWidth || 600); const H = height;
+    const m = { t: 12, r: 14, b: 24, l: 56 };
+    const xv = mode === 'intra' ? pts.map((p) => p[0]) : pts.map((_, i) => i);
+    const vs = pts.map((p) => p[1]).concat(prev != null ? [prev] : []);
+    const ticks = niceTicks(Math.min(...vs), Math.max(...vs), 4);
+    const y0 = ticks[0]; const y1 = ticks[ticks.length - 1];
+    const x0 = xv[0]; const x1 = xv[xv.length - 1];
+    const X = (x) => m.l + ((x - x0) / (x1 - x0 || 1)) * (W - m.l - m.r);
+    const Y = (v) => H - m.b - ((v - y0) / (y1 - y0 || 1)) * (H - m.t - m.b);
+    const maxAbs = Math.max(...ticks.map(Math.abs));
+    const yl = (v) => (maxAbs >= 1e5 ? compact(v) : fmt(v, maxAbs < 10 ? 2 : maxAbs < 1000 ? 1 : 0));
+    const xLabel = (i) => (mode === 'intra' ? kstTime.format(new Date(pts[i][0] * 1000)) : `${+pts[i][0].slice(5, 7)}/${+pts[i][0].slice(8, 10)}`);
+    const nX = Math.min(5, pts.length);
+    const xIdx = [...new Set(Array.from({ length: nX }, (_, k) => Math.round((k / (nX - 1 || 1)) * (pts.length - 1))))];
+    const last = pts[pts.length - 1][1];
+    const ref = mode === 'intra' && prev != null ? prev : pts[0][1];
+    const cls = last > ref ? 'up' : last < ref ? 'down' : 'flat';
+    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(xv[i]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+    const prevLine = mode === 'intra' && prev != null
+      ? `<line class="prev-line" x1="${m.l}" x2="${W - m.r}" y1="${Y(prev)}" y2="${Y(prev)}"/><text class="axis" x="${W - m.r}" y="${Y(prev) - 4}" text-anchor="end">전일 ${fmt(prev, digits)}</text>` : '';
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${esc(name)}">
+      ${ticks.map((v) => `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}"/><text class="axis" x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">${yl(v)}</text>`).join('')}
+      ${xIdx.map((i) => `<text class="axis" x="${X(xv[i])}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}">${xLabel(i)}</text>`).join('')}
+      ${prevLine}
+      <path class="ln big ${cls}" d="${d}"/>
+      <circle class="end ${cls}" cx="${X(xv[xv.length - 1])}" cy="${Y(last)}" r="3.5"/>
+      <line class="xhair" y1="${m.t}" y2="${H - m.b}" x1="0" x2="0" visibility="hidden"/>
+      <rect class="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}"/>
+    </svg>`;
+    const svg = el.querySelector('svg'); const hair = svg.querySelector('.xhair');
+    const move = (cx, evt) => {
+      const r = svg.getBoundingClientRect();
+      const px = ((cx - r.left) / r.width) * W;
+      let ni = 0; let nd = Infinity;
+      xv.forEach((x, i) => { const dd = Math.abs(X(x) - px); if (dd < nd) { nd = dd; ni = i; } });
+      hair.setAttribute('x1', X(xv[ni])); hair.setAttribute('x2', X(xv[ni])); hair.setAttribute('visibility', 'visible');
+      const when = mode === 'intra' ? kstDayTime.format(new Date(pts[ni][0] * 1000)) : pts[ni][0];
+      const chg = ref ? ` (${pct((pts[ni][1] / ref - 1) * 100)})` : '';
+      showTip(evt, `<b>${esc(when)}</b><br>${fmt(pts[ni][1], digits)}${chg}`);
+    };
+    svg.addEventListener('mousemove', (e) => move(e.clientX, e));
+    svg.addEventListener('touchmove', (e) => { const t = e.touches[0]; move(t.clientX, t); }, { passive: true });
+    svg.addEventListener('mouseleave', () => { hideTip(); hair.setAttribute('visibility', 'hidden'); });
+    svg.addEventListener('touchend', () => { hideTip(); hair.setAttribute('visibility', 'hidden'); });
+  }
+
+  window.MI = { esc, fmt, pct, signed, dirClass, compact, fmtTs, relTime, loadJson, copyText, showTip, hideTip, timeChart, barList, niceTicks, sparkSvg, seriesChart };
 })();
