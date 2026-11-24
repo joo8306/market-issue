@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 import briefing
+import charts
 import marketdata
 import overnight
 import targets
@@ -38,6 +39,8 @@ SOURCES = {
     "market_kr": (marketdata.fetch_kr_market, kr_refresh_sec),
     "market_overseas": (marketdata.fetch_overseas, overseas_refresh_sec),
     "overnight": (overnight.fetch_overnight, 4 * 60),   # 야간·주말 지표 (매 실행마다)
+    "charts_intraday": (charts.fetch_intraday, 4 * 60),   # 시황 그래프: 당일 흐름
+    "charts_daily": (charts.fetch_daily, 6 * 3600),        # 시황 그래프: 1개월 일별
     "kospi_history": (lambda: marketdata.fetch_kospi_history(pages=4), 6 * 3600),
     "wfe_country": (wfe_country.build, 24 * 3600),  # WFE 여러 호 + 유로넥스트 → 국가별
 }
@@ -91,6 +94,17 @@ def build_extras(out_dir, state_dir=STATE_DIR, now=None, sources=SOURCES, target
         },
     }
     _write(out_dir / "market.json", market)
+
+    # 시황 그래프 (당일·1개월). 야후 분봉이 막히면 실행마다 쌓은 현재가로 대신
+    try:
+        series = charts.combine(got.get("charts_intraday"), got.get("charts_daily"))
+        if "charts_intraday" in sources:
+            samples = charts.update_samples(state_dir / "intraday_samples.json",
+                                            charts.current_values(ov, got.get("overnight")), now_ts)
+            charts.fill_from_samples(series, samples)
+        _write(out_dir / "charts.json", {"generated_ts": now_ts, "series": series})
+    except Exception as e:
+        print(f"  charts: 실패 ({str(e)[:100]})")
 
     # 증권사 전망
     tp = targets.build_payload(targets.load_rows(targets_csv), got.get("kospi_history"), now.date(),
