@@ -13,7 +13,7 @@ from pathlib import Path
 import briefing
 import marketdata
 import targets
-import wfe
+import wfe_country
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".state"
@@ -37,7 +37,7 @@ SOURCES = {
     "market_kr": (marketdata.fetch_kr_market, kr_refresh_sec),
     "market_overseas": (marketdata.fetch_overseas, overseas_refresh_sec),
     "kospi_history": (lambda: marketdata.fetch_kospi_history(pages=4), 6 * 3600),
-    "wfe": (wfe.fetch_wfe, 24 * 3600),
+    "wfe_country": (wfe_country.build, 24 * 3600),  # WFE 여러 호 + 유로넥스트 → 국가별
 }
 
 
@@ -102,9 +102,9 @@ def build_extras(out_dir, state_dir=STATE_DIR, now=None, sources=SOURCES, target
     _write(out_dir / "targets.json", tp)
 
     # WFE
-    w = dict(got.get("wfe") or {})
+    w = dict(got.get("wfe_country") or {})
     w["generated_ts"] = now_ts
-    w["status"] = status.get("wfe")
+    w["status"] = status.get("wfe_country")
     _write(out_dir / "wfe.json", w)
 
     return market, tp, w

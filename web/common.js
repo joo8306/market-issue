@@ -90,13 +90,13 @@
    * 시계열 차트: 선 1개 + (선택) 점 계열 1개. y축 하나만 사용.
    * line: [[YYYY-MM-DD, v], ...], dots: [{date, value, html}]
    */
-  function timeChart(el, { line = [], dots = [], lineName = '', dotName = '', height = 260, yFormat } = {}) {
+  function timeChart(el, { line = [], dots = [], lineName = '', dotName = '', height = 260, yFormat, line2 = [], line2Name = '' } = {}) {
     const W = Math.max(320, el.clientWidth || 600);
     const H = height;
     const m = { t: 14, r: 16, b: 28, l: 52 };
     const t = (d) => new Date(`${d}T00:00:00Z`).getTime();
-    const xs = [...line.map((p) => t(p[0])), ...dots.map((d) => t(d.date))];
-    const ys = [...line.map((p) => p[1]), ...dots.map((d) => d.value)].filter((v) => v != null);
+    const xs = [...line.map((p) => t(p[0])), ...line2.map((p) => t(p[0])), ...dots.map((d) => t(d.date))];
+    const ys = [...line.map((p) => p[1]), ...line2.map((p) => p[1]), ...dots.map((d) => d.value)].filter((v) => v != null);
     if (!xs.length) { el.innerHTML = '<div class="empty">표시할 데이터가 없습니다</div>'; return; }
     const x0 = Math.min(...xs); const x1 = Math.max(...xs);
     const ticks = niceTicks(Math.min(...ys), Math.max(...ys));
@@ -113,19 +113,24 @@
     const xt = [];
     const start = new Date(x0); start.setUTCDate(1); start.setUTCMonth(start.getUTCMonth() + 1);
     const months = Math.max(1, Math.round((x1 - x0) / (30 * 864e5)));
-    const every = months > 8 ? 2 : 1;
+    const every = Math.max(months > 8 ? 2 : 1, Math.ceil(months / ((W - m.l - m.r) / 44)));  // 라벨 간격 ≥ 44px
     for (let d = new Date(start), i = 0; d.getTime() <= x1; d.setUTCMonth(d.getUTCMonth() + 1), i++) {
       if (i % every) continue;
       xt.push(`<text class="axis" x="${X(d.getTime())}" y="${H - 8}" text-anchor="middle">${String(d.getUTCFullYear()).slice(2)}.${d.getUTCMonth() + 1}</text>`);
     }
-    const path = line.map((p, i) => `${i ? 'L' : 'M'}${X(t(p[0])).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+    const toPath = (ln) => ln.map((p, i) => `${i ? 'L' : 'M'}${X(t(p[0])).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+    const path = toPath(line);
+    const path2 = toPath(line2);
+    const at2 = new Map(line2.map((p) => [p[0], p[1]]));
     const last = line[line.length - 1];
     const dotEls = dots.map((d, i) => `<circle class="dot s2" data-i="${i}" cx="${X(t(d.date))}" cy="${Y(d.value)}" r="4.5"/>`).join('');
 
     el.innerHTML = `
       ${(lineName && dotName) ? `<div class="legend"><span><i class="key line s1"></i>${esc(lineName)}</span><span><i class="key dot s2"></i>${esc(dotName)}</span></div>` : ''}
+      ${(lineName && line2Name) ? `<div class="legend"><span><i class="key line s1"></i>${esc(lineName)}</span><span><i class="key line s2"></i>${esc(line2Name)}</span></div>` : ''}
       <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${esc(lineName)} ${esc(dotName)}">
         ${grid}${xt.join('')}
+        ${path2 ? `<path class="ln s2" d="${path2}"/>` : ''}
         ${path ? `<path class="ln s1" d="${path}"/>` : ''}
         ${last ? `<circle class="end s1" cx="${X(t(last[0]))}" cy="${Y(last[1])}" r="4"/>
           <text class="lbl" x="${Math.min(X(t(last[0])), W - m.r) - 6}" y="${Y(last[1]) - 10}" text-anchor="end">${vf(last[1])}</text>` : ''}
@@ -158,7 +163,8 @@
       const p = line[ni];
       hair.setAttribute('x1', X(t(p[0]))); hair.setAttribute('x2', X(t(p[0])));
       hair.setAttribute('visibility', 'visible');
-      showTip(e, `<b>${esc(p[0])}</b><br>${esc(lineName)} ${vf(p[1])}`);
+      const v2 = at2.get(p[0]);
+      showTip(e, `<b>${esc(p[0])}</b><br>${esc(lineName)} ${vf(p[1])}${v2 != null ? `<br>${esc(line2Name)} ${vf(v2)}` : ''}`);
     });
     svg.addEventListener('mouseleave', () => { hideTip(); hair.setAttribute('visibility', 'hidden'); });
   }

@@ -35,3 +35,9 @@
 | # | 항목 | 대기 내용 |
 |---|---|---|
 (없음)
+
+## 구현 (2026-11-24)
+- 수집: `scripts/wfe_country.py` — WFE Focus 2024년 1월호~최신호(시총·거래대금·지수는 호마다 1월~발표월, 상장사 수는 호마다 그달) + 유로넥스트 `Cash YYYYMM.xlsx`(매년 12월 파일 + 최신 파일)
+- 매핑: `data/wfe_country_map.csv` (kind: listing / alt / exclude / index_only / multi / alt_multi / multi_euronext)
+- 결과: `dist/wfe.json` (rows = 기준월 국가별 요약, trend = 국가별 월별 값) · 하루 1번 확인
+- 화면: `web/wfe.html` — 한국 요약 카드, 지표별 국가 순위(주요국/전체, 거래대금 기준 전환, 상장사 국내·외국·합계), 한국 vs 선택국 월별 추이, CSV(엑셀) 내려받기, 각주

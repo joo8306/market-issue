@@ -18,6 +18,7 @@ import marketdata as md  # noqa: E402
 import notify  # noqa: E402
 import targets  # noqa: E402
 import wfe  # noqa: E402
+import wfe_country as wc  # noqa: E402
 
 FX = Path(__file__).resolve().parent / "fixtures"
 
@@ -269,6 +270,103 @@ MD_SAMPLE = """기준일: 2026-11-06 (금) 코스피 목표 지수 · 증권사 
 """
 
 
+class WfeCountryTest(unittest.TestCase):
+    """거래소 → 국가 합계, 유로넥스트 분리, 증감률"""
+
+    def setUp(self):
+        self.issue = wfe.parse_issue((FX / "wfe_issue.html").read_text(encoding="utf-8"))
+        self.cmap = wc.load_map()
+
+    def test_map_covers_fixture(self):
+        series, listed, _ = wc.collect_issues([("2026-10", self.issue)])
+        missing = [ex for ex in series["mcap"] if ex not in self.cmap]
+        self.assertEqual(missing, [])
+
+    def test_issue_slugs(self):
+        html = '<a href="/issue/january-2024/market-statistics"></a><a href="/issue/october-2026/market-statistics"></a>' \
+               '<a href="/issue/may-2022/market-statistics"></a>'
+        self.assertEqual(wc.issue_slugs(html, 2023), [("2024-01", "january-2024"), ("2026-10", "october-2026")])
+
+    def test_later_issue_overrides(self):
+        a = {"mcap": {"months": ["2026-01"], "month_cols": ["c"], "rows": [
+            {"exchange": "Korea Exchange", "total": False, "values": {"c": 100}, "text": {}}]}}
+        b = {"mcap": {"months": ["2026-01"], "month_cols": ["c"], "rows": [
+            {"exchange": "Korea Exchange", "total": False, "values": {"c": 110}, "text": {}}]}}
+        series, _, _ = wc.collect_issues([("2026-02", a), ("2026-03", b)])
+        self.assertEqual(series["mcap"]["Korea Exchange"]["2026-01"], 110)
+
+    def test_aggregate_rules(self):
+        cmap = {
+            "Nasdaq - US": {"country": "미국", "kind": "listing"}, "NYSE": {"country": "미국", "kind": "listing"},
+            "Cboe Global Markets": {"country": "미국", "kind": "alt"},
+            "National Equities Exchange and Quotations": {"country": "중국", "kind": "exclude"},
+            "Euronext": {"country": "유로넥스트(7개국)", "kind": "multi_euronext"},
+        }
+        series = {
+            "mcap": {"Nasdaq - US": {"2026-09": 30}, "NYSE": {"2026-09": 20}, "Euronext": {"2026-09": 100},
+                     "National Equities Exchange and Quotations": {"2026-09": 5}},
+            "value": {"Nasdaq - US": {"2026-09": 3}, "NYSE": {"2026-09": 2}, "Cboe Global Markets": {"2026-09": 1},
+                      "Euronext": {"2026-09": 10}},
+            "index": {},
+        }
+        listed = {"Nasdaq - US": {"2026-09": {"dom": 10, "for": 2, "tot": 12}},
+                  "NYSE": {"2026-09": {"dom": 5, "for": 1, "tot": 6}},
+                  "Cboe Global Markets": {"2026-09": {"dom": 9, "for": 0, "tot": 9}}}
+        enx = {"Paris": {"2026-09": {"mcap_eur": 60, "turnover_eur": 5, "issuers": 7}},
+               "Amsterdam": {"2026-09": {"mcap_eur": 40, "turnover_eur": 15, "issuers": 3}}}
+        agg, members, unmapped = wc.aggregate(series, listed, {}, cmap, enx)
+        self.assertEqual(agg["mcap"]["미국"]["2026-09"], 50)
+        self.assertEqual(agg["value"]["미국"]["2026-09"], 5)          # 상장 거래소 기준
+        self.assertEqual(agg["value_all"]["미국"]["2026-09"], 6)      # 대체거래소 포함
+        self.assertEqual(agg["listed"]["미국"]["2026-09"], {"dom": 15, "for": 3, "tot": 18})  # 대체거래소 제외
+        self.assertNotIn("중국", agg["mcap"])                          # 신삼판 제외
+        self.assertAlmostEqual(agg["mcap"]["프랑스"]["2026-09"], 60)  # 100 × 60/100
+        self.assertAlmostEqual(agg["value"]["네덜란드"]["2026-09"], 7.5)  # 10 × 15/20
+        self.assertEqual(agg["listed"]["프랑스"]["2026-09"]["tot"], 7)
+        self.assertNotIn("유로넥스트(7개국)", agg["mcap"])
+        self.assertEqual(unmapped, [])
+
+    def test_summarize_growth(self):
+        agg = {"mcap": {"한국": {"2025-09": 50, "2025-12": 80, "2026-09": 100}},
+               "value": {"한국": {"2025-01": 10, "2025-09": 20, "2026-01": 15, "2026-09": 30}},
+               "value_all": {}, "index": {},
+               "listed": {"한국": {"2025-12": {"dom": 10, "for": 1, "tot": 11}, "2026-09": {"dom": 12, "for": 1, "tot": 13}}}}
+        rows, world = wc.summarize(agg, {}, "2026-09")
+        k = rows["한국"]
+        self.assertAlmostEqual(k["mcap_ytd"], 25)       # 전년말 대비
+        self.assertAlmostEqual(k["mcap_yoy"], 100)      # 전년 동월 대비
+        self.assertAlmostEqual(k["value_yoy"], 50)
+        self.assertEqual(k["value_cum"], 45)            # 연초 누적
+        self.assertAlmostEqual(k["value_cum_yoy"], 50)  # 45 / 30
+        self.assertEqual((k["listed_dom"], k["listed_tot"], k["listed_dom_ytd"]), (12, 13, 2))
+        self.assertEqual(world, 100)
+
+    def test_parse_euronext_xlsx(self):
+        import io
+        from datetime import datetime as dt
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "PM - Overview"
+        ws.append(["NUMBER OF ISSUERS & MARKET CAPITALIZATION - SHARES - LISTINGS"])
+        ws.append([])
+        head = [None] * 12
+        head[2], head[9] = "Paris", "Oslo"
+        ws.append(head)
+        ws.append([])
+        ws.append(["2026-09", None, 726, None, None, 2700000, None, None, None, 200, None, None, 300000])
+        ws.append(["Total"])
+        sm = wb.create_sheet("SM - Paris")
+        sm.append(["Turnover (M€) - Electronic order book (Single counted)"])
+        sm.append(["Month", None, "Equities*"])
+        sm.append([dt(2026, 9, 1), None, 90000])
+        buf = io.BytesIO()
+        wb.save(buf)
+        out = wc.parse_euronext_xlsx(buf.getvalue())
+        self.assertEqual(out["Paris"]["2026-09"], {"issuers": 726, "mcap_eur": 2700000, "turnover_eur": 90000})
+        self.assertEqual(out["Oslo"]["2026-09"]["mcap_eur"], 300000)
+
+
 class TargetsTest(unittest.TestCase):
     def test_parse_markdown(self):
         rows = targets.parse_markdown(MD_SAMPLE)
@@ -402,7 +500,7 @@ class ExtrasCacheTest(unittest.TestCase):
             "market_overseas": (lambda: {"items": [dict(symbol=s, name=n, group=g, **(sp.get(s) or {}))
                                                    for s, n, g in md.OVERSEAS]}, 0),
             "kospi_history": (lambda: [["2026-11-20", 4869.96], ["2026-11-23", 4708.54]], 0),
-            "wfe": (lambda: wfe.summarize(issue, "src"), 0),
+            "wfe_country": (lambda: {"latest": "2026-09", "rows": [{"country": "한국"}]}, 0),
         }
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "dist"
@@ -414,7 +512,7 @@ class ExtrasCacheTest(unittest.TestCase):
             market = json.loads((out / "market.json").read_text(encoding="utf-8"))
             self.assertIn("○ KOSPI", market["drafts"]["closing"]["copy"])
             self.assertIn("○ 美 증시", market["drafts"]["overnight"]["copy"])
-            self.assertEqual(len(json.loads((out / "wfe.json").read_text(encoding="utf-8"))["metrics"]), 4)
+            self.assertEqual(json.loads((out / "wfe.json").read_text(encoding="utf-8"))["rows"][0]["country"], "한국")
             self.assertEqual(len(json.loads((out / "targets.json").read_text(encoding="utf-8"))["kospi"]), 2)
 
 
