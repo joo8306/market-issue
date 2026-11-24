@@ -163,12 +163,18 @@
     return parts.length ? `<div class="fresh${warn ? ' warn' : ''}">${warn ? '⚠ ' : ''}${esc(parts.join(' · '))}</div>` : '';
   }
 
-  function perpsHtml(on) {
-    if (!on?.perps?.length) return '';
-    return `<table class="tbl"><thead><tr><th>무기한 선물 <span class="badge-unofficial">비공식</span></th><th class="num">현재</th><th class="num">국내 종가 대비</th><th class="num">24시간</th><th class="num">거래대금(24h)</th><th class="num">24시간 흐름</th></tr></thead><tbody>
-      ${on.perps.map((p) => {
-        const now = p.kind === 'stock' ? `${won(p.krw)}<div class="sub">${usd(p.mark)}</div>` : p.kind === 'usd' ? usd(p.mark) : fmt(p.mark);
-        const ref = p.kind === 'stock' ? won(p.ref_close) : p.kind === 'usd' ? usd(p.ref_close) : fmt(p.ref_close);
+  const perpNow = (p) => (p.kind === 'stock' ? won(p.krw) : p.kind === 'usd' ? usd(p.mark) : fmt(p.mark));
+  const perpRef = (p) => (p.kind === 'stock' ? won(p.ref_close) : p.kind === 'usd' ? usd(p.ref_close) : fmt(p.ref_close));
+
+  function perpsHtml(on, region) {
+    const rows = (on?.perps || []).filter((p) => (p.region || 'kr') === region);
+    if (!rows.length) return '';
+    const title = region === 'kr' ? '무기한 선물 · 한국' : '무기한 선물 · 미국';
+    const refHead = region === 'kr' ? 'KRX 종가 대비' : '美 정규장 종가 대비';
+    return `<table class="tbl"><thead><tr><th>${title} <span class="badge-unofficial">비공식</span></th><th class="num">현재</th><th class="num">${refHead}</th><th class="num">24시간</th><th class="num">거래대금(24h)</th><th class="num">24시간 흐름</th></tr></thead><tbody>
+      ${rows.map((p) => {
+        const now = p.kind === 'stock' ? `${won(p.krw)}<div class="sub">${usd(p.mark)}</div>` : perpNow(p);
+        const ref = perpRef(p);
         return `<tr${rowAttr(p.symbol, `${p.name} (무기한 선물)`)}><th>${esc(p.name)}</th><td class="num">${now}</td>
           <td class="num ${dirClass(p.vs_close)}">${pct(p.vs_close)}<div class="sub" title="비교 기준 시각 ${esc(tShort(p.ref_time))}">기준 ${ref}</div></td>
           ${chgCell(p.pct24)}<td class="num">${p.vol24_usd == null ? '-' : `$${fmt(p.vol24_usd / 1e6, 1)}M`}</td>${sparkTd(p.symbol)}</tr>`;
@@ -190,7 +196,7 @@
       ${rows.map((r) => {
         if (r.price == null) return `<tr><th>${esc(r.name)}</th><td class="num muted" colspan="4">수집 실패</td></tr>`;
         const extra = r.krw_per_share ? `<div class="sub">주당 ${won(r.krw_per_share)} (국내 ${pct(r.vs_kr_close)})</div>` : '';
-        const over = r.over ? `<span class="${dirClass(r.over.pct)}">${pct(r.over.pct)}</span><div class="sub">${esc(r.over.session)}</div>` : '<span class="muted">-</span>';
+        const over = r.over ? `<span class="${dirClass(r.over.pct)}">${pct(r.over.pct)}</span><div class="sub">${esc(r.over.session)}${r.over.time ? ` · ${esc(tShort(r.over.time))}` : ''}</div>` : '<span class="muted">-</span>';
         return `<tr${rowAttr(r.code, r.name)}><th>${esc(r.name)}${r.status === 'OPEN' ? ' <span class="live">장중</span>' : ''}${freshHtml(r.time, r.delay, r.status)}</th><td class="num">${usd(r.price)}${extra}</td>${chgCell(r.pct)}<td class="num">${over}</td>${sparkTd(r.code)}</tr>`;
       }).join('')}
     </tbody></table>`;
@@ -200,16 +206,50 @@
   function weekendHtml(on) {
     const dow = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(new Date());
     const hour = +new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).format(new Date()) % 24;
-    if (!(dow === 'Sat' || dow === 'Sun' || (dow === 'Mon' && hour < 9)) || !on?.perps?.length) return '';
-    return `<div class="weekend">
-      <div class="weekend-title">주말 변동 <span class="muted">금요일 정규장 종가 대비 · 무기한 선물(비공식)</span></div>
-      <div class="cards">${on.perps.map((p) => `
+    if (!(dow === 'Sat' || dow === 'Sun' || (dow === 'Mon' && hour < 8)) || !on?.perps?.length) return '';
+    const cards = (region) => on.perps.filter((p) => (p.region || 'kr') === region).map((p) => `
         <div class="card">
           <div class="card-label">${esc(p.name)}</div>
           <div class="card-value ${dirClass(p.vs_close)}">${pct(p.vs_close)}</div>
-          <div class="card-sub">현재 ${p.kind === 'stock' ? won(p.krw) : p.kind === 'usd' ? usd(p.mark) : fmt(p.mark)} · 기준 ${p.kind === 'stock' ? won(p.ref_close) : p.kind === 'usd' ? usd(p.ref_close) : fmt(p.ref_close)}</div>
+          <div class="card-sub">현재 ${perpNow(p)} · 기준 ${perpRef(p)}</div>
           <div class="card-sub">거래대금(24h) ${p.vol24_usd == null ? '-' : `$${fmt(p.vol24_usd / 1e6, 1)}M`}</div>
-        </div>`).join('')}</div></div>`;
+        </div>`).join('');
+    return `<div class="weekend">
+      <div class="weekend-title">주말 변동 · 한국 <span class="muted">KRX 금요일 정규장 종가 대비 · 무기한 선물(비공식)</span></div>
+      <div class="cards">${cards('kr')}</div>
+      <div class="weekend-title">주말 변동 · 미국 <span class="muted">美 금요일 정규장 종가 대비 · 무기한 선물(비공식)</span></div>
+      <div class="cards">${cards('us')}</div></div>`;
+  }
+
+  // 미국 서머타임 여부 → 한국 시각 기준 거래시간 안내
+  function usDst() {
+    const off = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', timeZoneName: 'shortOffset' })
+      .formatToParts(new Date()).find((x) => x.type === 'timeZoneName')?.value || '';
+    return off.includes('-4');
+  }
+  function hoursNote() {
+    const d = usDst();
+    const h = (a) => `${String(a - (d ? 1 : 0)).padStart(2, '0')}:00`;
+    return `<p class="tbl-note">
+      <b>시간외</b> 프리마켓 ${h(18)}~${d ? '22:30' : '23:30'} · 애프터마켓 ${h(6)}~${h(10)}
+      · <b>美 지수 선물</b> 월 ${h(8)} ~ 토 ${h(7)}, 매일 ${h(7)}~${h(8)} 휴식 (시간외 없음)
+      · 한국 시각, ${d ? '미국 서머타임 적용 중' : '미국 서머타임 해제 기간'}</p>`;
+  }
+
+  // 평일 08~09시: 넥스트레이드 프리마켓(삼성전자·SK하이닉스) + 무기한 선물로 개장 전 동향
+  function preHtml(on) {
+    const pre = on?.kr_pre || [];
+    const perps = (on?.perps || []).filter((p) => (p.region || 'kr') === 'kr');
+    if (!pre.length && !perps.length) return '';
+    return `
+      <section class="panel">
+        <h2>개장 전 동향 <span class="muted">08:00~09:00 · KRX 전일 종가 대비</span></h2>
+        ${pre.length ? `<table class="tbl"><thead><tr><th>NXT 프리마켓</th><th class="num">현재</th><th class="num">KRX 종가 대비</th><th class="num">체결 시각</th></tr></thead><tbody>
+          ${pre.map((r) => `<tr><th>${esc(r.name)}</th><td class="num">${won(r.price)}</td><td class="num ${dirClass(r.vs_krx)}">${pct(r.vs_krx)}<div class="sub">기준 ${won(r.krx_close)}</div></td><td class="num muted">${esc(tShort(r.time))}</td></tr>`).join('')}
+        </tbody></table>` : '<div class="empty">프리마켓 체결이 아직 없습니다 (넥스트레이드 08:00~08:50)</div>'}
+        <div class="tbl-wrap">${perpsHtml(on, 'kr')}</div>
+        <p class="tbl-note">넥스트레이드 프리마켓은 08:00~08:50, 네이버 시세 기준입니다. 등락률은 네이버 표시값이 아니라 <b>KRX 전일 정규장 종가</b> 대비로 계산합니다.</p>
+      </section>`;
   }
 
   function nightHtml(on, st) {
@@ -218,16 +258,18 @@
       <section class="panel">
         <h2>야간·주말 지표 <span class="muted">${st?.fetched_ts ? `확인 ${relTime(st.fetched_ts)}` : ''}${on.usdkrw ? ` · 원/달러 ${fmt(on.usdkrw, 1)}` : ''}</span></h2>
         ${weekendHtml(on)}
-        <div class="tbl-wrap">${perpsHtml(on)}</div>
+        <div class="tbl-wrap">${perpsHtml(on, 'kr')}</div>
+        <div class="tbl-wrap">${perpsHtml(on, 'us')}</div>
         <div class="grid-tables">
           ${futuresHtml(on)}
           ${linkedHtml(on, 'kr', '한국 관련 (해외 상장)')}
           ${linkedHtml(on, 'semi', '반도체')}
           ${linkedHtml(on, 'adr', '한국 ADR (뉴욕)')}
         </div>
+        ${hoursNote()}
         <details class="foot-notes"><summary>기준·주의</summary><ol class="notes">
           <li><b>무기한 선물</b>: 하이퍼리퀴드(trade.xyz)에서 24시간·주말에도 거래되는 비공식 상품입니다. 한국 장이 닫힌 동안의 <b>방향 참고용</b>이며, 거래가 적으면 가격이 쉽게 튑니다(24h 거래대금 함께 확인).</li>
-          <li><b>국내 종가 대비</b>: 삼성전자·SK하이닉스는 달러 가격 × 원/달러(하이퍼리퀴드 기준가)로 환산해 KRX 정규장 종가와 비교합니다. 코스피200은 지수 포인트를 코스피200 정규장 종가와 비교합니다.</li>
+          <li><b>종가 대비</b>: 삼성전자·SK하이닉스는 달러 가격 × 원/달러(하이퍼리퀴드 기준가)로 환산해 KRX 정규장 종가와 비교합니다(15:30 전에는 직전 거래일 종가). 코스피200은 지수 포인트를 코스피200 종가와 비교합니다. 미국 무기한 선물은 S&P500·나스닥100 지수 종가, 엔비디아·마이크론 정규장 종가와 비교합니다.</li>
           <li><b>코스피200 야간선물(KRX 야간시장)</b>은 무료 공개 시세가 없어 아직 넣지 않았습니다. 위의 무기한 코스피200(KR200)으로 대신 참고하세요.</li>
           <li><b>삼성전자 GDR</b>: 런던 상장, 1 GDR = 보통주 25주. 주당 원화 환산값을 국내 종가와 비교합니다.</li>
           <li>미국 선물·종목은 네이버 해외 시세(일부 지연 가능), 삼성전자 GDR은 야후 시세입니다. 앱은 약 5분마다 갱신합니다.</li>
@@ -270,9 +312,12 @@
     const night = nightHtml(data.overnight, st.overnight);
     // 주말·새벽(~9시)·저녁(18시~)에는 야간·주말 지표를 맨 위에
     const dow = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(new Date());
-    const nightFirst = dow === 'Sat' || dow === 'Sun' || hour < 9 || hour >= 18;
+    // 야간·주말 지표 맨 위: 주말 종일, 평일 00~08시·18시~ / 평일 08~09시는 '개장 전 동향'이 맨 위
+    const weekend = dow === 'Sat' || dow === 'Sun';
+    const nightFirst = weekend || hour < 8 || hour >= 18;
+    const pre = !weekend && hour === 8 ? preHtml(data.overnight) : '';
     const body = hour < 12 ? overnight + closing : closing + overnight;
-    $('main').innerHTML = nightFirst ? night + body : body + night;
+    $('main').innerHTML = pre + (nightFirst ? night + body : body + night);
     reopenCharts();
   }
 
