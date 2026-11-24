@@ -91,7 +91,7 @@
     });
   }
 
-  function rowHtml(it) {
+  function rowHtml(it, { regionTag = false } = {}) {
     const isNew = state.newIds.has(it.id);
     const src = it.publisher && it.publisher !== it.source ? `${it.source} · ${it.publisher}` : it.source;
     const also = it.also?.length ? ` +${it.also.length}` : '';
@@ -101,7 +101,7 @@
         <div class="row-content">
           <div class="row-title">${isNew ? '<span class="badge new">NEW</span>' : ''}${it.urgent ? '<span class="badge urgent">긴급</span>' : ''}${esc(it.title_ko || it.title)}</div>${it.title_ko ? `<div class="row-orig" lang="en">${esc(it.title)}</div>` : ''}
           <div class="row-meta">
-            <span class="cat">${esc(it.category)}</span>
+            ${regionTag ? `<span class="rtag tag-${esc(it.region)}">${it.region === 'KR' ? '국내' : '해외'}</span>` : ''}<span class="cat">${esc(it.category)}</span>
             <span class="kw">${esc(it.keyword)}</span>
             <span class="src" title="${esc((it.also || []).join(', '))}">${esc(src)}${also}</span>
           </div>
@@ -109,22 +109,10 @@
       </a>`;
   }
 
-  function listHtml(items) {
-    return items.length ? items.map(rowHtml).join('') : '<div class="empty">조건에 맞는 이슈가 없습니다</div>';
+  function listHtml(items, opts) {
+    return items.length ? items.map((it) => rowHtml(it, opts)).join('') : '<div class="empty">조건에 맞는 이슈가 없습니다</div>';
   }
 
-  function sectionHtml(region, items) {
-    const label = region === 'KR' ? ['KR', '한국 시장'] : ['GLOBAL', '해외 시장 / 매크로'];
-    return `
-      <section>
-        <div class="section-header">
-          <span class="section-tag tag-${region}">${label[0]}</span>
-          <span class="section-title">${label[1]}</span>
-          <span class="section-count">${items.length} items</span>
-        </div>
-        ${listHtml(items)}
-      </section>`;
-  }
 
   function renderChips(items) {
     const counts = new Map();
@@ -188,11 +176,10 @@
 
     const visible = filtered(items);
     const list = $('list');
-    if (state.tab === 'all') {
-      list.innerHTML = `<div class="columns two">${sectionHtml('KR', visible.filter((i) => i.region === 'KR'))}${sectionHtml('GLOBAL', visible.filter((i) => i.region === 'GLOBAL'))}</div>`;
-    } else {
-      list.innerHTML = `<div class="columns"><section>${listHtml(visible)}</section></div>`;
-    }
+    // 전체·긴급은 국내·해외를 시간순 한 줄로 섞고 기사마다 국내/해외 표시, 국내·해외 탭은 표시 생략
+    const mixed = state.tab === 'all' || state.tab === 'urgent';
+    const sorted = [...visible].sort((a, b) => b.time_ts - a.time_ts);
+    list.innerHTML = `<div class="columns"><section>${listHtml(sorted, { regionTag: mixed })}</section></div>`;
   }
 
   // ---------- 해외 기사 제목 번역 (내 기기에서 구글 번역 호출) ----------
