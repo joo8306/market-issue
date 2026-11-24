@@ -58,7 +58,7 @@ def parse_us_futures(rows):
         if code in want:
             out.append({"code": code, "name": want[code], "price": f(r.get("closePrice")),
                         "pct": f(r.get("fluctuationsRatio")), "time": r.get("localTradedAt"),
-                        "status": r.get("marketStatus")})
+                        "status": r.get("marketStatus"), "delay": r.get("delayTimeName")})
     order = [c for c, _ in US_FUTURES]
     return sorted(out, key=lambda x: order.index(x["code"]))
 
@@ -81,7 +81,8 @@ def parse_over_market(info):
 def parse_world_stock(code, name, group, d):
     return {"code": code, "name": name, "group": group, "price": f(d.get("closePrice")),
             "pct": f(d.get("fluctuationsRatio")), "status": d.get("marketStatus"),
-            "time": d.get("localTradedAt"), "over": parse_over_market(d.get("overMarketPriceInfo"))}
+            "time": d.get("localTradedAt"), "over": parse_over_market(d.get("overMarketPriceInfo")),
+            "delay": d.get("delayTimeName")}
 
 
 def fetch_kr_linked():
