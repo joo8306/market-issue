@@ -346,6 +346,7 @@ def build_payload(rows, kospi_history=None, today=None, meta=None):
         change = rec["change"]
         snapshot.append(dict(rec, change=change, age_days=age,
                              recent=age <= 31 and change in ("상향", "하향", "신규"),
+                             is_new=age <= 7 and change in ("상향", "하향", "신규"),
                              stale=age > STALE_DAYS.get(rec["period"], 92)))
     order = {p: i for i, p in enumerate(PERIODS)}
     snapshot.sort(key=lambda r: r["date"], reverse=True)  # 같은 기간 안에서는 최신순

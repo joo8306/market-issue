@@ -94,6 +94,11 @@ def build_extras(out_dir, state_dir=STATE_DIR, now=None, sources=SOURCES, target
                                targets.load_meta(targets_meta))
     tp["generated_ts"] = now_ts
     tp["status"] = status.get("kospi_history")
+    # '현재 대비'는 시황 화면과 같은 코스피 현재가(장중 5분마다 갱신)로 계산
+    k = ((kr or {}).get("indices") or {}).get("KOSPI") or {}
+    if k.get("close"):
+        tp["kospi_now"] = {"close": k["close"], "date": k.get("date"), "status": k.get("status"),
+                           "pct": k.get("pct"), "ts": (status.get("market_kr") or {}).get("fetched_ts")}
     _write(out_dir / "targets.json", tp)
 
     # WFE
