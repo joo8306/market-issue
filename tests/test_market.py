@@ -354,6 +354,19 @@ class TargetsTest(unittest.TestCase):
         n = next(b for b in p["brokers"] if b["broker"] == "N")
         self.assertEqual(n["items"][0]["change"], "신규")  # 기간을 모르는 전망끼리는 비교하지 않음
 
+    def test_prev_by_overlapping_horizon(self):
+        def r(per, t, lo, hi, d, basis):
+            return {**{k: "" for k in targets.FIELDS}, "증권사": "D", "구분": "국내", "기간": per, "목표": t,
+                    "하단": lo, "상단": hi, "제시일": d, "기준": basis, "내용": basis}
+        rows = [r("연말", "11500", "", "", "2026-06-17", "2026년 연간 목표"),
+                r("분기", "", "5200", "6700", "2026-10-26", "2026년 4분기 예상 밴드"),
+                r("내년", "", "5200", "8200", "2026-10-26", "2027년 연간 예상 밴드")]
+        p = targets.build_payload(rows, [], date(2026, 11, 24))
+        q = next(x for x in p["snapshot"] if x["period"] == "분기")
+        self.assertEqual((q["change"], q["prev"]["level"], q["prev"]["cross"]), ("하향", 11500, True))  # 상단 6,700 < 11,500
+        ny = next(x for x in p["snapshot"] if x["period"] == "내년")
+        self.assertEqual((ny["change"], ny["prev"]), ("신규", None))  # 2027년은 기준 다른 직전값을 쓰지 않음
+
     def test_committed_data_loads(self):
         rows = targets.load_rows()
         self.assertTrue(all(r["기준"] for r in rows), "모든 행에 기준(무엇을 뜻하는 수치인지)이 있어야 함")
