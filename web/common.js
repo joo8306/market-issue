@@ -250,5 +250,27 @@
     svg.addEventListener('touchend', () => { hideTip(); hair.setAttribute('visibility', 'hidden'); });
   }
 
-  window.MI = { esc, fmt, pct, signed, dirClass, compact, fmtTs, relTime, loadJson, copyText, showTip, hideTip, timeChart, barList, niceTicks, sparkSvg, seriesChart };
+  // 여러 선 (시각 축). lines: [{name, cls, pts: [[유닉스초, 값]...]}], 0 기준선 표시
+  function multiLineChart(el, lines, { height = 180, unit = '' } = {}) {
+    const all = lines.flatMap((l) => l.pts);
+    if (all.length < 2) { el.innerHTML = '<div class="empty">장중 기록이 쌓이면 표시됩니다</div>'; return; }
+    const W = Math.max(280, el.clientWidth || 500); const H = height;
+    const m = { t: 10, r: 12, b: 22, l: 54 };
+    const ts = all.map((p) => p[0]); const vs = all.map((p) => p[1]).concat([0]);
+    const ticks = niceTicks(Math.min(...vs), Math.max(...vs), 4);
+    const y0 = ticks[0]; const y1 = ticks[ticks.length - 1];
+    const x0 = Math.min(...ts); const x1 = Math.max(...ts);
+    const X = (x) => m.l + ((x - x0) / (x1 - x0 || 1)) * (W - m.l - m.r);
+    const Y = (v) => H - m.b - ((v - y0) / (y1 - y0 || 1)) * (H - m.t - m.b);
+    const xt = [x0, (x0 + x1) / 2, x1];
+    el.innerHTML = `
+      <div class="legend">${lines.map((l) => `<span><i class="key line ${l.cls}"></i>${esc(l.name)} <b class="${dirClass(l.pts.at(-1)?.[1])}">${l.pts.length ? signed(l.pts.at(-1)[1]) : '-'}${unit}</b></span>`).join('')}</div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img">
+        ${ticks.map((v) => `<line class="grid${v === 0 ? ' zero' : ''}" x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}"/><text class="axis" x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v, 0)}</text>`).join('')}
+        ${xt.map((x, i) => `<text class="axis" x="${X(x)}" y="${H - 6}" text-anchor="${['start', 'middle', 'end'][i]}">${kstTime.format(new Date(x * 1000))}</text>`).join('')}
+        ${lines.map((l) => (l.pts.length > 1 ? `<path class="ln flow ${l.cls}" d="${l.pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('')}"/>` : '')).join('')}
+      </svg>`;
+  }
+
+  window.MI = { esc, fmt, pct, signed, dirClass, compact, fmtTs, relTime, loadJson, copyText, showTip, hideTip, timeChart, barList, niceTicks, sparkSvg, seriesChart, multiLineChart };
 })();

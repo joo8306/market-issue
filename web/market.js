@@ -1,16 +1,17 @@
 // 시황 화면: 국내 마감시황 · 해외시황 데이터 + 시황문자 초안
 (() => {
   'use strict';
-  const { esc, fmt, pct, signed, dirClass, fmtTs, relTime, loadJson, copyText, sparkSvg, seriesChart } = window.MI;
+  const { esc, fmt, pct, signed, dirClass, fmtTs, relTime, loadJson, copyText, sparkSvg, seriesChart, multiLineChart } = window.MI;
   const $ = (id) => document.getElementById(id);
   let data = null;
   let charts = {};                 // charts.json: {키: {intra, prev, day, sampled}}
+  let flows = {};                  // 장중 투자자별 누적 순매수 기록 {KOSPI: {date, points: [[ts, 외국인, 기관, 개인]]}}
   const openCharts = new Map();    // 펼쳐 둔 그래프: 키 → 'intra' | 'day' (새로고침 후에도 유지)
 
   // ---------- 그래프 ----------
   // 표의 줄을 누르면 아래에 큰 그래프 (당일 / 1개월), 각 줄 오른쪽에는 당일 미니 그래프
   const rowAttr = (key, name) => ` class="chartable" data-chart="${esc(key)}" data-name="${esc(name)}"`;
-  const sparkTd = (key) => `<td class="num spark-cell">${sparkSvg(charts[key]?.intra, charts[key]?.prev, { w: 60, h: 20 })}</td>`;
+  const sparkTd = (key) => `<td class="num spark-cell"${charts[key]?.sampled ? ' title="5분마다 기록한 값"' : ''}>${sparkSvg(charts[key]?.intra, charts[key]?.prev, { w: 60, h: 20 })}${charts[key]?.sampled ? '<span class="rec">기록</span>' : ''}</td>`;
   const sparkTh = '<th class="num">당일</th>';
 
   function chartPanelHtml(key, name) {
@@ -115,6 +116,34 @@
       </div>`;
   }
 
+  // 장중 투자자별 누적 순매수 추이 (5분마다 기록, 억원)
+  function flowsHtml(kr) {
+    const codes = ['KOSPI', 'KOSDAQ'].filter((c) => flows[c]?.points?.length && flows[c].date === kr.indices?.[c]?.date);
+    if (!codes.length) return '';
+    return `<div class="flows">${codes.map((c) => `
+      <div class="flow-box"><div class="flow-title">${c} 투자자별 순매수 <span class="muted">장중 누적 · 억원 · 5분마다 기록</span></div>
+        <div class="flow-chart" data-flow="${c}"></div></div>`).join('')}</div>`;
+  }
+  function drawFlows() {
+    document.querySelectorAll('[data-flow]').forEach((el) => {
+      const pts = flows[el.dataset.flow]?.points || [];
+      const line = (i) => pts.filter((p) => p[i] != null).map((p) => [p[0], p[i]]);
+      multiLineChart(el, [
+        { name: '외국인', cls: 'f-for', pts: line(1) }, { name: '기관', cls: 'f-inst', pts: line(2) }, { name: '개인', cls: 'f-ind', pts: line(3) },
+      ], { unit: '억' });
+    });
+  }
+
+  // 업종 등락 상·하위 5
+  function sectorsHtml(list) {
+    if (!list?.length) return '';
+    const row = (s) => `<tr><th>${esc(s.name)}</th><td class="num ${dirClass(s.pct)}">${pct(s.pct)}</td><td class="num muted">${fmt(s.rise, 0)}↑ ${fmt(s.fall, 0)}↓</td></tr>`;
+    return `<div class="grid-tables sectors">
+      <table class="tbl"><thead><tr><th>업종 상위</th><th class="num">등락률</th><th class="num">상승·하락</th></tr></thead><tbody>${list.slice(0, 5).map(row).join('')}</tbody></table>
+      <table class="tbl"><thead><tr><th>업종 하위</th><th class="num">등락률</th><th class="num">상승·하락</th></tr></thead><tbody>${list.slice(-5).reverse().map(row).join('')}</tbody></table>
+    </div>`;
+  }
+
   function moversHtml(list) {
     if (!list?.length) return '';
     return `<table class="tbl"><thead><tr><th>시총 상위</th><th class="num">종가</th><th class="num">등락률</th><th class="num">거래대금(억)</th></tr></thead><tbody>
@@ -149,6 +178,19 @@
     return Number.isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
   };
   const chgCell = (v) => `<td class="num ${dirClass(v)}">${pct(v)}</td>`;
+  // 신선도: 몇 분 전 값인지 + 지연 표시. 장중인데 30분 넘게 안 바뀌면 주의 표시
+  function freshHtml(iso, delay, status) {
+    const t = iso ? new Date(iso).getTime() : NaN;
+    const parts = [];
+    let warn = false;
+    if (!Number.isNaN(t)) {
+      const min = Math.max(0, Math.round((Date.now() - t) / 60000));
+      parts.push(min < 60 ? `${min}분 전` : min < 1440 ? `${Math.floor(min / 60)}시간 전` : `${Math.floor(min / 1440)}일 전`);
+      warn = status === 'OPEN' && min > 30;
+    }
+    if (delay && delay !== '실시간') parts.push(delay);
+    return parts.length ? `<div class="fresh${warn ? ' warn' : ''}">${warn ? '⚠ ' : ''}${esc(parts.join(' · '))}</div>` : '';
+  }
 
   function perpsHtml(on) {
     if (!on?.perps?.length) return '';
@@ -166,7 +208,7 @@
   function futuresHtml(on) {
     if (!on?.us_futures?.length) return '';
     return `<table class="tbl"><thead><tr><th>美 지수 선물</th><th class="num">현재</th><th class="num">등락</th><th class="num">시각</th>${sparkTh}</tr></thead><tbody>
-      ${on.us_futures.map((r) => `<tr${rowAttr(r.code, r.name)}><th>${esc(r.name)}</th><td class="num">${fmt(r.price)}</td>${chgCell(r.pct)}<td class="num muted">${esc(tShort(r.time))}</td>${sparkTd(r.code)}</tr>`).join('')}
+      ${on.us_futures.map((r) => `<tr${rowAttr(r.code, r.name)}><th>${esc(r.name)}${freshHtml(r.time, r.delay, r.status)}</th><td class="num">${fmt(r.price)}</td>${chgCell(r.pct)}<td class="num muted">${esc(tShort(r.time))}</td>${sparkTd(r.code)}</tr>`).join('')}
     </tbody></table>`;
   }
 
@@ -178,9 +220,25 @@
         if (r.price == null) return `<tr><th>${esc(r.name)}</th><td class="num muted" colspan="4">수집 실패</td></tr>`;
         const extra = r.krw_per_share ? `<div class="sub">주당 ${won(r.krw_per_share)} (국내 ${pct(r.vs_kr_close)})</div>` : '';
         const over = r.over ? `<span class="${dirClass(r.over.pct)}">${pct(r.over.pct)}</span><div class="sub">${esc(r.over.session)}</div>` : '<span class="muted">-</span>';
-        return `<tr${rowAttr(r.code, r.name)}><th>${esc(r.name)}${r.status === 'OPEN' ? ' <span class="live">장중</span>' : ''}</th><td class="num">${usd(r.price)}${extra}</td>${chgCell(r.pct)}<td class="num">${over}</td>${sparkTd(r.code)}</tr>`;
+        return `<tr${rowAttr(r.code, r.name)}><th>${esc(r.name)}${r.status === 'OPEN' ? ' <span class="live">장중</span>' : ''}${freshHtml(r.time, r.delay, r.status)}</th><td class="num">${usd(r.price)}${extra}</td>${chgCell(r.pct)}<td class="num">${over}</td>${sparkTd(r.code)}</tr>`;
       }).join('')}
     </tbody></table>`;
+  }
+
+  // 주말(·월요일 개장 전): 금요일 정규장 종가 대비 주말 변동을 맨 위에 요약
+  function weekendHtml(on) {
+    const dow = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(new Date());
+    const hour = +new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).format(new Date()) % 24;
+    if (!(dow === 'Sat' || dow === 'Sun' || (dow === 'Mon' && hour < 9)) || !on?.perps?.length) return '';
+    return `<div class="weekend">
+      <div class="weekend-title">주말 변동 <span class="muted">금요일 정규장 종가 대비 · 무기한 선물(비공식)</span></div>
+      <div class="cards">${on.perps.map((p) => `
+        <div class="card">
+          <div class="card-label">${esc(p.name)}</div>
+          <div class="card-value ${dirClass(p.vs_close)}">${pct(p.vs_close)}</div>
+          <div class="card-sub">현재 ${p.kind === 'stock' ? won(p.krw) : p.kind === 'usd' ? usd(p.mark) : fmt(p.mark)} · 기준 ${p.kind === 'stock' ? won(p.ref_close) : p.kind === 'usd' ? usd(p.ref_close) : fmt(p.ref_close)}</div>
+          <div class="card-sub">거래대금(24h) ${p.vol24_usd == null ? '-' : `$${fmt(p.vol24_usd / 1e6, 1)}M`}</div>
+        </div>`).join('')}</div></div>`;
   }
 
   function nightHtml(on, st) {
@@ -188,6 +246,7 @@
     return `
       <section class="panel">
         <h2>야간·주말 지표 <span class="muted">${st?.fetched_ts ? `확인 ${relTime(st.fetched_ts)}` : ''}${on.usdkrw ? ` · 원/달러 ${fmt(on.usdkrw, 1)}` : ''}</span></h2>
+        ${weekendHtml(on)}
         <div class="tbl-wrap">${perpsHtml(on)}</div>
         <div class="grid-tables">
           ${futuresHtml(on)}
@@ -201,6 +260,7 @@
           <li><b>코스피200 야간선물(KRX 야간시장)</b>은 무료 공개 시세가 없어 아직 넣지 않았습니다. 위의 무기한 코스피200(KR200)으로 대신 참고하세요.</li>
           <li><b>삼성전자 GDR</b>: 런던 상장, 1 GDR = 보통주 25주. 주당 원화 환산값을 국내 종가와 비교합니다.</li>
           <li>미국 선물·종목은 네이버 해외 시세(일부 지연 가능), 삼성전자 GDR은 야후 시세입니다. 앱은 약 5분마다 갱신합니다.</li>
+          <li><b>신선도</b>: 이름 아래 'n분 전'은 그 값의 체결 시각, '10분 지연'은 출처의 지연입니다. 장중인데 30분 넘게 그대로면 ⚠ 표시가 붙습니다. 미니 그래프의 '기록'은 야후 분봉 대신 5분마다 기록한 값으로 그렸다는 뜻입니다.</li>
           <li><b>그래프</b>: 줄을 누르면 당일·1개월 그래프가 펼쳐집니다. 당일 흐름은 국내 = 네이버 분봉, 해외 = 야후 5분봉(막히면 5분마다 기록한 값), 무기한 선물 = 하이퍼리퀴드 5분봉(최근 24시간)입니다.</li>
         </ol></details>
       </section>`;
@@ -220,6 +280,8 @@
       <section class="panel">
         <h2>국내 마감시황</h2>
         <div class="cards idx">${indexCard(kr.indices?.KOSPI)}${indexCard(kr.indices?.KOSDAQ)}</div>
+        ${flowsHtml(kr)}
+        ${sectorsHtml(kr.sectors)}
         ${draftHtml(data.drafts?.closing, 'copy-closing')}
         <details><summary>확인표 · 시총 상위</summary>${checksHtml(data.drafts?.closing)}${moversHtml(kr.top_mcap?.KOSPI)}</details>
       </section>`;
@@ -238,6 +300,7 @@
     const body = hour < 12 ? overnight + closing : closing + overnight;
     $('main').innerHTML = nightFirst ? night + body : body + night;
     reopenCharts();
+    drawFlows();
   }
 
   async function refresh() {
@@ -247,6 +310,7 @@
       const [d, c] = await Promise.all([loadJson('market.json'), loadJson('charts.json').catch(() => null)]);
       data = d;
       charts = c?.series || charts;
+      flows = c?.flows || flows;
       render();
     } catch (e) {
       $('main').innerHTML = `<div class="empty">데이터를 불러오지 못했습니다 (${esc(e.message)})</div>`;
