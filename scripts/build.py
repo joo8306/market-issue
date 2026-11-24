@@ -303,6 +303,13 @@ def build_site(payload, out_dir=OUT_DIR):
 def main():
     print("수집 시작")
     items, health = fetch_all()
+    # 해외 뉴스 영문 제목 → 한글 번역 (실패해도 영문 그대로 진행)
+    try:
+        import translate
+        n, engine, err = translate.apply_translations(items)
+        print(f"  제목 번역({engine}): 새로 {n}건" + (f" · 오류: {err}" if err else ""))
+    except Exception as e:
+        print(f"  제목 번역 건너뜀: {str(e)[:100]}")
     now = datetime.now(timezone.utc)
     payload = {
         "generated_at": now.isoformat(),

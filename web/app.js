@@ -84,7 +84,7 @@
       else if (state.tab === 'urgent' && !it.urgent) return false;
       if (!ignoreCategory && state.category && it.category !== state.category) return false;
       if (q) {
-        const hay = `${it.title} ${it.source} ${it.publisher || ''} ${it.keyword} ${it.category}`.toLowerCase();
+        const hay = `${it.title} ${it.title_ko || ''} ${it.source} ${it.publisher || ''} ${it.keyword} ${it.category}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -99,7 +99,7 @@
       <a class="row${it.urgent ? ' urgent' : ''}${isNew ? ' new' : ''}" href="${esc(it.link)}" target="_blank" rel="noopener">
         <div class="row-time">${esc(fmtKst(it.time_ts))}<span class="rel">${relTime(it.time_ts)}</span></div>
         <div class="row-content">
-          <div class="row-title">${isNew ? '<span class="badge new">NEW</span>' : ''}${it.urgent ? '<span class="badge urgent">긴급</span>' : ''}${esc(it.title)}</div>
+          <div class="row-title">${isNew ? '<span class="badge new">NEW</span>' : ''}${it.urgent ? '<span class="badge urgent">긴급</span>' : ''}${esc(it.title_ko || it.title)}</div>${it.title_ko ? `<div class="row-orig" lang="en">${esc(it.title)}</div>` : ''}
           <div class="row-meta">
             <span class="cat">${esc(it.category)}</span>
             <span class="kw">${esc(it.keyword)}</span>
