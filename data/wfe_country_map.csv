@@ -1,0 +1,110 @@
+exchange,country,region,kind,note
+Abu Dhabi Securities Exchange,UAE,EMEA,listing,
+Dubai Financial Market,UAE,EMEA,listing,
+Ghana Stock Exchange,가나,EMEA,listing,
+Athens Stock Exchange,그리스,EMEA,listing,
+Namibia Securities Exchange,나미비아,EMEA,listing,
+Nigerian Exchange,나이지리아,EMEA,listing,
+Johannesburg Stock Exchange,남아공,EMEA,listing,
+Euronext Amsterdam,네덜란드,EMEA,index_only,지수만
+Euronext Oslo,노르웨이,EMEA,index_only,지수만
+NZX Limited,뉴질랜드,APAC,listing,
+Taipei Exchange,대만,APAC,listing,TPEx: 정식 2부 시장 (코스닥과 유사)
+Taiwan Stock Exchange,대만,APAC,listing,
+NASDAQ OMX Nordic Copenhagen,덴마크,EMEA,index_only,지수만
+Boerse Stuttgart,독일,EMEA,alt,지역 거래소: 주로 개인 투자자 거래 (거래대금만)
+Deutsche Boerse AG,독일,EMEA,listing,프랑크푸르트
+Bucharest Stock Exchange,루마니아,EMEA,listing,
+Luxembourg Stock Exchange,룩셈부르크,EMEA,listing,
+Rwanda Stock Exchange,르완다,EMEA,listing,
+Bursa Malaysia,말레이시아,APAC,listing,
+Bolsa Institucional de Valores de Mexico,멕시코,Americas,listing,WFE 표에는 거래대금만 있음
+Bolsa Mexicana de Valores,멕시코,Americas,listing,
+Stock Exchange of Mauritius,모리셔스,EMEA,listing,
+Malta Stock Exchange,몰타,EMEA,listing,
+Cboe Global Markets,미국,Americas,alt,대체거래소: 상장 없이 거래만 (거래대금 '대체거래소 포함' 기준에만)
+MIAX Exchange Group,미국,Americas,alt,대체거래소: 상장 없이 거래만 (거래대금 '대체거래소 포함' 기준에만)
+NYSE,미국,Americas,listing,
+Nasdaq - US,미국,Americas,listing,
+Bahrain Bourse,바레인,EMEA,listing,
+Dhaka Stock Exchange,방글라데시,APAC,listing,
+Bermuda Stock Exchange,버뮤다,Americas,listing,
+Hochiminh Stock Exchange,베트남,APAC,listing,하노이거래소는 WFE 표에 없음
+Euronext Brussels,벨기에,EMEA,index_only,지수만
+Belarusian Currency and Stock Exchange,벨라루스,EMEA,listing,
+Royal Securities Exchange of Bhutan,부탄,APAC,listing,
+Bulgarian Stock Exchange,불가리아,EMEA,listing,
+B3 - Brasil Bolsa Balcão,브라질,Americas,listing,
+Saudi Exchange (Tadawul),사우디아라비아,EMEA,listing,
+Colombo Stock Exchange,스리랑카,APAC,listing,
+NASDAQ OMX Nordic Stockholm,스웨덴,EMEA,index_only,지수만
+SIX Swiss Exchange,스위스,EMEA,listing,
+BME Spanish Exchanges,스페인,EMEA,listing,
+BME Spanish Exchanges Barcelona,스페인,EMEA,index_only,지수만
+BME Spanish Exchanges Bilbao,스페인,EMEA,index_only,지수만
+BME Spanish Exchanges Valencia,스페인,EMEA,index_only,지수만
+Bratislava Stock Exchange,슬로바키아,EMEA,listing,
+Ljubljana Stock Exchange,슬로베니아,EMEA,listing,
+Singapore Exchange,싱가포르,APAC,listing,
+Armenia Securities Exchange,아르메니아,APAC,listing,
+NASDAQ OMX Nordic Iceland,아이슬란드,EMEA,index_only,지수만
+Euronext Dublin,아일랜드,EMEA,index_only,지수만
+Baku Stock Exchange,아제르바이잔,APAC,listing,
+Muscat Stock Exchange,오만,EMEA,listing,
+Vienna Stock Exchange,오스트리아,EMEA,listing,
+Amman Stock Exchange,요르단,EMEA,listing,
+Iran Fara Bourse Securities Exchange,이란,EMEA,listing,
+Tehran Stock Exchange,이란,EMEA,listing,
+Tel-Aviv Stock Exchange,이스라엘,EMEA,listing,
+The Egyptian Exchange,이집트,EMEA,listing,
+Borsa Italiana,이탈리아,EMEA,index_only,지수만 (시총 등은 유로넥스트 밀라노)
+BSE India Limited,인도,APAC,listing,인도 BSE·NSE 합산 (결정 C1). 같은 대형주가 양쪽에 상장돼 시총·상장사 수가 이중 계산될 수 있음
+National Stock Exchange of India,인도,APAC,listing,인도 BSE·NSE 합산 (결정 C1). 같은 대형주가 양쪽에 상장돼 시총·상장사 수가 이중 계산될 수 있음
+Indonesia Stock Exchange,인도네시아,APAC,listing,
+Japan Exchange Group,일본,APAC,listing,
+Jamaica Stock Exchange,자메이카,Americas,listing,
+Lusaka Securities Exchange,잠비아,EMEA,listing,
+National Equities Exchange and Quotations,중국,APAC,exclude,신삼판: 비상장 중소기업 장외 성격 시장 → 전부 제외 (결정 C3)
+Shanghai Stock Exchange,중국,APAC,listing,
+Shenzhen Stock Exchange,중국,APAC,listing,
+Prague Stock Exchange,체코,EMEA,listing,
+Bolsa Electronica de Chile,칠레,Americas,exclude,"칠레는 큰 거래소(산티아고)만 사용 (결정 C5, 중복 상장 가능성)"
+Bolsa de Comercio de Santiago,칠레,Americas,listing,
+Astana International Exchange,카자흐스탄,APAC,listing,
+Kazakhstan Stock Exchange,카자흐스탄,APAC,exclude,"카자흐스탄은 시총이 큰 AIX만 사용 (결정 C5, 중복 상장 가능성)"
+Qatar Stock Exchange,카타르,EMEA,listing,
+Canadian Securities Exchange,캐나다,Americas,listing,
+TMX Group,캐나다,Americas,listing,토론토증권거래소 등
+Nairobi Securities Exchange,케냐,EMEA,listing,
+Bolsa Nacional de Valores de Costa Rica,코스타리카,Americas,listing,
+Bolsa de Valores de Colombia,콜롬비아,Americas,listing,
+Boursa Kuwait,쿠웨이트,EMEA,listing,
+Zagreb Stock Exchange,크로아티아,EMEA,listing,
+Cyprus Stock Exchange,키프로스,EMEA,listing,
+Dar Es Salaam Stock Exchange,탄자니아,EMEA,listing,
+The Stock Exchange of Thailand,태국,APAC,listing,
+Tunis Stock Exchange,튀니지,EMEA,listing,
+Borsa Istanbul,튀르키예,EMEA,listing,
+Bolsa Latinoamericana de Valores (Latinex),파나마,Americas,listing,
+Pakistan Stock Exchange,파키스탄,APAC,listing,
+Palestine Exchange,팔레스타인,EMEA,listing,
+Bolsa de Valores de Lima,페루,Americas,listing,
+Warsaw Stock Exchange,폴란드,EMEA,listing,
+Euronext Paris,프랑스,EMEA,index_only,지수만
+NASDAQ OMX Nordic Helsinki,핀란드,EMEA,index_only,지수만
+Philippine Stock Exchange,필리핀,APAC,listing,
+Korea Exchange,한국,APAC,listing,코스피·코스닥 합계
+Budapest Stock Exchange,헝가리,EMEA,listing,
+ASX Australian Securities Exchange,호주,APAC,listing,
+Hong Kong Exchanges and Clearing,홍콩,APAC,listing,중국과 별도 (결정 C2)
+Nasdaq Nordic and Baltics,나스닥 북유럽·발트(7개국),EMEA,multi,스웨덴·덴마크·핀란드·아이슬란드·에스토니아·라트비아·리투아니아 합계 (나라별 구분 불가)
+Cboe Europe,유럽(다국가),EMEA,alt_multi,"유럽 여러 나라 종목을 거래만 하는 시장, 나라별 구분 불가 → 국가 표에서 제외"
+Euronext,유로넥스트(7개국),EMEA,multi_euronext,유로넥스트 7개국 합계 → 유로넥스트 월간 통계의 시장별 비중으로 나라별 분리
+BRVM,서아프리카 지역거래소(8개국),EMEA,multi,서아프리카 8개국 공동 거래소(BRVM)
+Bolsa Nacional de Valores,코스타리카,Americas,listing,
+Botswana Stock Exchange,보츠와나,EMEA,listing,
+Bourse de Casablanca,모로코,EMEA,listing,
+MERJ Exchange Limited,세이셸,EMEA,listing,
+Moscow Exchange,러시아,EMEA,listing,
+Namibian Stock Exchange,나미비아,EMEA,listing,
+Tashkent Stock Exchange,우즈베키스탄,EMEA,listing,

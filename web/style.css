@@ -412,3 +412,28 @@ details.panel > summary { font-size: 14px; font-weight: 600; color: var(--navy);
 }
 .broker:not([open]) { padding: 8px 12px; }
 .broker > summary::marker { color: var(--gold); }
+
+/* ===== WFE 국가별 ===== */
+.wfe-tiles .card-value small { font-size: 12px; color: var(--text-dim); font-weight: 500; margin-left: 2px; }
+.wfe-tiles .rank { color: var(--navy); }
+.wfe-ctl { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-card); }
+.seg button { border: 0; background: none; padding: 6px 12px; font: inherit; font-size: 13px; color: var(--text-dim); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.active { background: var(--navy); color: var(--on-navy); font-weight: 600; }
+.wfe-tbl tbody tr.hl > * { background: color-mix(in srgb, var(--gold) 14%, transparent); }
+.wfe-tbl tbody tr.hl th.country { color: var(--red); font-weight: 700; }
+.wfe-tbl th.country { min-width: 96px; }
+.wfe-tbl .members { font-size: 11px; color: var(--text-faint); font-weight: 400; white-space: normal; max-width: 220px; }
+.wfe-tbl td.idx-name { white-space: normal; min-width: 120px; font-size: 12px; }
+.note-mark { color: var(--gold); cursor: help; }
+.dl-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dl-row .btn { padding: 6px 12px; font-size: 13px; background: var(--bg-card); cursor: pointer; }
+.chart-ctl { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+.chart-ctl select { font: inherit; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); }
+svg .ln.s2 { stroke: var(--gold); } .key.line.s2 { background: var(--gold); }
+@media (max-width: 600px) {
+  .wfe-tbl .members { display: none; }
+  .wfe-tbl th, .wfe-tbl td { padding: 6px 5px; }
+  .seg button { padding: 6px 9px; }
+}
