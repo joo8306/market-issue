@@ -45,6 +45,21 @@ class OvernightTest(unittest.TestCase):
         self.assertIsNone(k["SK하이닉스"]["vs_close"])                              # 기준 종가 없으면 비교 안 함
         self.assertNotIn("EWY", k)                                                  # 시세 없는 상품은 생략
 
+    def test_krx_close_row_skips_today_before_close(self):
+        from datetime import datetime
+        rows = [{"localTradedAt": "2026-11-25", "closePrice": "189,400"}, {"localTradedAt": "2026-11-24", "closePrice": "182,900"}]
+        self.assertEqual(on.krx_close_row(rows, datetime(2026, 11, 25, 8, 20, tzinfo=on.md.KST))["closePrice"], "182,900")
+        self.assertEqual(on.krx_close_row(rows, datetime(2026, 11, 25, 15, 40, tzinfo=on.md.KST))["closePrice"], "189,400")
+
+    def test_kr_premarket(self):
+        basic = {"overMarketPriceInfo": {"tradingSessionType": "PRE_MARKET", "overMarketStatus": "OPEN",
+                                         "overPrice": "180,600", "localTradedAt": "2026-11-25T08:21:29+09:00"}}
+        r = on.parse_kr_pre("005930", "삼성전자", basic, 182900.0)
+        self.assertEqual(r["price"], 180600.0)
+        self.assertAlmostEqual(r["vs_krx"], (180600 / 182900 - 1) * 100)   # 네이버 등락률이 아니라 KRX 종가 대비
+        after = {"overMarketPriceInfo": {"tradingSessionType": "AFTER_MARKET", "overPrice": "182,900"}}
+        self.assertIsNone(on.parse_kr_pre("005930", "삼성전자", after, 182900.0))   # 애프터마켓은 제외
+
 
 if __name__ == "__main__":
     unittest.main()

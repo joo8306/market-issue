@@ -37,12 +37,19 @@ KR_LINKED = [  # (네이버 코드, 이름, 묶음)
     ("TSM", "TSMC ADR", "semi"),
 ]
 SAMSUNG_GDR = ("SMSN.IL", "삼성전자 GDR (런던)", 25)   # 1 GDR = 보통주 25주
-PERPS = [  # (하이퍼리퀴드 이름, 표시 이름, 비교 기준 종류, 국내 코드)
+PERPS = [  # (하이퍼리퀴드 이름, 표시 이름, 비교 기준 종류, 기준 코드)
+    # index = 국내 지수(포인트) / stock = 국내 주식(달러→원화 환산) / usd = 미국 종목(달러) / us_index = 미국 지수(포인트)
     ("xyz:KR200", "코스피200", "index", "KPI200"),
     ("xyz:SMSN", "삼성전자", "stock", "005930"),
     ("xyz:SKHX", "SK하이닉스", "stock", "000660"),
     ("xyz:EWY", "EWY", "usd", "EWY"),
+    ("xyz:SP500", "S&P500", "us_index", ".INX"),
+    ("xyz:XYZ100", "나스닥100", "us_index", ".NDX"),
+    ("xyz:NVDA", "엔비디아", "usd", "NVDA.O"),
+    ("xyz:MU", "마이크론", "usd", "MU.O"),
 ]
+PERP_US = {"xyz:SP500", "xyz:XYZ100", "xyz:NVDA", "xyz:MU"}   # 주말 카드에서 '미국' 묶음
+KR_PRE = [("005930", "삼성전자"), ("000660", "SK하이닉스")]       # 넥스트레이드 프리마켓(08:00~08:50)
 
 
 def f(x):
@@ -113,17 +120,29 @@ def fetch_samsung_gdr():
         return {"code": sym, "name": name, "group": "kr", "error": str(e)[:60]}
 
 
+def krx_close_row(rows, now=None):
+    """일별 시세 → 확정된 KRX 정규장 종가 행 (오늘 15:30 전이면 오늘 행 제외)"""
+    now = now or datetime.now(md.KST)
+    today = now.strftime("%Y-%m-%d")
+    done = now.hour * 60 + now.minute >= 15 * 60 + 30
+    for r in rows:
+        if r.get("localTradedAt", "")[:10] < today or (done and r.get("localTradedAt", "")[:10] == today):
+            return r
+    return rows[-1]
+
+
 def fetch_kr_closes():
     """국내 정규장 종가 (무기한 선물 비교 기준)"""
     out = {}
     for _, _, kind, code in PERPS:
         try:
-            if kind == "index":
-                d = md.http_json(f"{NAVER}/index/{code}/basic")
-            elif kind == "stock":
-                # 일별 시세의 최근 행 = KRX 정규장 종가 (basic 은 넥스트레이드 시간외 가격일 수 있음)
-                rows = md.http_json(f"{NAVER}/stock/{code}/price?pageSize=1&page=1")
-                d = {"closePrice": rows[0]["closePrice"], "localTradedAt": rows[0]["localTradedAt"] + "T15:30:00+09:00"}
+            if kind in ("index", "stock"):
+                # KRX 정규장 종가 = 일별 시세. 15:30 전에는 오늘 행(장전·장중 값)을 건너뛰고 직전 거래일 종가
+                path = "index" if kind == "index" else "stock"
+                row = krx_close_row(md.http_json(f"{NAVER}/{path}/{code}/price?pageSize=3&page=1"))
+                d = {"closePrice": row["closePrice"], "localTradedAt": row["localTradedAt"] + "T15:30:00+09:00"}
+            elif kind == "us_index":
+                d = md.http_json(f"{NAVER_WORLD}/index/{code}/basic")
             else:
                 d = md.http_json(f"{NAVER_WORLD}/stock/{code}/basic")
             out[code] = {"close": f(d.get("closePrice")), "time": d.get("localTradedAt"), "status": d.get("marketStatus")}
@@ -154,13 +173,36 @@ def parse_perps(meta_ctxs, closes):
         krw = mark * fx if kind == "stock" and mark and fx else None
         cmp = krw if kind == "stock" else mark
         out.append({
-            "name": label, "symbol": name, "kind": kind, "mark": mark, "oracle": f(c.get("oraclePx")),
+            "name": label, "symbol": name, "kind": kind, "region": "us" if name in PERP_US else "kr",
+            "mark": mark, "oracle": f(c.get("oraclePx")),
             "pct24": md.pct(mark, prev), "krw": krw, "ref_close": ref,
             "ref_time": (closes.get(code) or {}).get("time"),
             "vs_close": md.pct(cmp, ref) if cmp and ref else None,
             "vol24_usd": f(c.get("dayNtlVlm")), "oi": f(c.get("openInterest")),
         })
     return out, fx
+
+
+def parse_kr_pre(code, name, basic, krx_close):
+    """네이버 국내 종목 기본 시세 → 넥스트레이드 프리마켓 (프리마켓 체결이 있을 때만)"""
+    o = parse_over_market((basic or {}).get("overMarketPriceInfo"))
+    if not o or o["session"] != "프리마켓":
+        return None
+    return {"code": code, "name": name, "price": o["price"], "time": o["time"],
+            "status": ((basic or {}).get("overMarketPriceInfo") or {}).get("overMarketStatus"),
+            "krx_close": krx_close, "vs_krx": md.pct(o["price"], krx_close)}
+
+
+def fetch_kr_pre(closes):
+    out = []
+    for code, name in KR_PRE:
+        try:
+            r = parse_kr_pre(code, name, md.http_json(f"{NAVER}/stock/{code}/basic"), (closes.get(code) or {}).get("close"))
+            if r:
+                out.append(r)
+        except Exception:
+            pass
+    return out
 
 
 def fetch_overnight():
@@ -178,11 +220,12 @@ def fetch_overnight():
     linked.insert(1, fetch_samsung_gdr())
     closes = safe("kr_closes", fetch_kr_closes, {})
     perps, fx = safe("perps", lambda: parse_perps(hl_post({"type": "metaAndAssetCtxs", "dex": HL_DEX}), closes), ([], None))
+    kr_pre = safe("kr_pre", lambda: fetch_kr_pre(closes), [])
     gdr = next((x for x in linked if x.get("code") == SAMSUNG_GDR[0]), None)
     if gdr and gdr.get("per_share_usd") and fx and (closes.get("005930") or {}).get("close"):
         gdr["krw_per_share"] = gdr["per_share_usd"] * fx
         gdr["vs_kr_close"] = md.pct(gdr["krw_per_share"], closes["005930"]["close"])
     if errors and not (futures or linked or perps):
         raise RuntimeError("; ".join(f"{k}: {v}" for k, v in errors.items()))
-    return {"us_futures": futures, "linked": linked, "perps": perps, "usdkrw": fx,
+    return {"us_futures": futures, "linked": linked, "perps": perps, "usdkrw": fx, "kr_pre": kr_pre,
             "kr_closes": closes, "errors": errors}

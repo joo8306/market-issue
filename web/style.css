@@ -485,3 +485,6 @@ svg .prev-line { stroke: var(--text-faint); stroke-dasharray: 4 3; }
 .weekend .cards { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin: 6px 0; }
 .weekend .card-value { font-size: 20px; }
 .weekend .card-value.up { color: var(--red); } .weekend .card-value.down { color: var(--navy-2); }
+.tbl-note { font-size: 11px; color: var(--text-faint); margin: 2px 0 10px; line-height: 1.6; }
+.tbl-note b { color: var(--text-dim); font-weight: 600; }
+.weekend-title + .cards + .weekend-title { margin-top: 10px; }
